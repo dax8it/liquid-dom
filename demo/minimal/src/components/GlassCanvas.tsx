@@ -312,7 +312,6 @@ fn fragmentMain(in: VertexOutput) -> @location(0) vec4f {
 
   let distortion = globals.controls.y * edgeMask;
   let refractedUv = in.uv + gradient * distortion / globals.viewport.xy;
-  let refracted = sampleBackgroundSharp(refractedUv);
   let blurred = sampleBackgroundBlurred(refractedUv);
   let displacementDebug = vec3f(
     gradient.x * edgeMask * 0.5 + 0.5,
@@ -321,9 +320,7 @@ fn fragmentMain(in: VertexOutput) -> @location(0) vec4f {
   );
   let normalDebug = normalOuter * 0.5 + vec3f(0.5);
 
-  let edgeRefractionMask = smoothstep(0.08, 0.92, edgeMask) * (1.0 - interiorMask * 0.82);
   var glass = blurred;
-  glass = mix(glass, refracted, edgeRefractionMask);
   glass = mix(glass, vec3f(0.93, 0.96, 1.0), 0.12 + 0.08 * interiorMask);
 
   let outerSpecularMask = smoothstep(globals.specularPrimary.y, 0.0, abs(distance));
