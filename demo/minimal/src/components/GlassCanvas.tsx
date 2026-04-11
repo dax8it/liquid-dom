@@ -1,9 +1,15 @@
+import backgroundImageUrl from '../assets/background.jpg'
 import { useEffect, useRef, useState, type PointerEvent } from 'react'
 
 const MAX_SHAPES = 3
 const GPU_BUFFER_USAGE = {
   UNIFORM: 0x40,
   COPY_DST: 0x08,
+} as const
+const GPU_TEXTURE_USAGE = {
+  TEXTURE_BINDING: 0x04,
+  COPY_DST: 0x08,
+  RENDER_ATTACHMENT: 0x10,
 } as const
 
 const GLASS_SHADER = /* wgsl */ `
@@ -23,6 +29,8 @@ struct ShapeData {
 
 @group(0) @binding(0) var<uniform> globals: Globals;
 @group(0) @binding(1) var<uniform> shapes: ShapeData;
+@group(0) @binding(2) var backgroundSampler: sampler;
+@group(0) @binding(3) var backgroundTexture: texture_2d<f32>;
 
 struct VertexOutput {
   @builtin(position) position: vec4f,
@@ -82,7 +90,7 @@ fn sdfGradient(pos: vec2f) -> vec2f {
 
 fn coverUv(uv: vec2f) -> vec2f {
   let viewportAspect = globals.viewport.x / max(globals.viewport.y, 1.0);
-  let imageAspect = 1.6;
+  let imageAspect = globals.viewport.z / max(globals.viewport.w, 1.0);
   if (viewportAspect > imageAspect) {
     return vec2f(uv.x, (uv.y - 0.5) * (imageAspect / viewportAspect) + 0.5);
   }
@@ -93,34 +101,9 @@ fn lineMask(value: f32, thickness: f32) -> f32 {
   return 1.0 - smoothstep(0.0, thickness, abs(value));
 }
 
-fn sceneBackground(uv: vec2f) -> vec3f {
-  let clampedUv = clamp(uv, vec2f(0.0), vec2f(1.0));
-  let top = vec3f(0.93, 0.95, 0.98);
-  let bottom = vec3f(0.72, 0.78, 0.86);
-  var color = mix(top, bottom, clampedUv.y);
-
-  let warmGlowCenter = vec2f(0.2, 0.16);
-  let warmGlowDistance = distance(clampedUv, warmGlowCenter);
-  let warmGlow = smoothstep(0.42, 0.0, warmGlowDistance);
-  color = mix(color, vec3f(1.0, 0.97, 0.94), warmGlow * 0.42);
-
-  let coolGlowCenter = vec2f(0.78, 0.84);
-  let coolGlowDistance = distance(clampedUv, coolGlowCenter);
-  let coolGlow = smoothstep(0.36, 0.0, coolGlowDistance);
-  color = mix(color, vec3f(0.72, 0.82, 0.98), coolGlow * 0.24);
-
-  let gridUv = clampedUv * vec2f(4.0, 3.1) - vec2f(0.2, 0.08);
-  let gridX = lineMask(fract(gridUv.x) - 0.5, 0.008);
-  let gridY = lineMask(fract(gridUv.y) - 0.5, 0.008);
-  let grid = max(gridX, gridY);
-  color = mix(color, color * 0.78, grid * 0.18);
-
-  let grain = (hash21(clampedUv * globals.viewport.xy * 0.35) - 0.5) * 0.04;
-  return color + grain;
-}
-
 fn sampleBackground(uv: vec2f) -> vec3f {
-  return sceneBackground(uv);
+  let clampedUv = clamp(uv, vec2f(0.0), vec2f(1.0));
+  return textureSampleLevel(backgroundTexture, backgroundSampler, clampedUv, 0.0).rgb;
 }
 
 fn sampleBlur(uv: vec2f, radiusPx: f32) -> vec3f {
@@ -470,6 +453,15 @@ export function GlassCanvas() {
       }
       const targetContext = context
 
+      const backgroundResponse = await fetch(backgroundImageUrl)
+      if (!backgroundResponse.ok) {
+        throw new Error('Background image failed to load.')
+      }
+      const backgroundBlob = await backgroundResponse.blob()
+      const backgroundBitmap = await createImageBitmap(backgroundBlob, {
+        colorSpaceConversion: 'default',
+      })
+
       const presentationFormat = gpuNavigator.gpu.getPreferredCanvasFormat()
       const globalsBuffer = device.createBuffer({
         size: 24 * 4,
@@ -479,6 +471,37 @@ export function GlassCanvas() {
       const shapesBuffer = device.createBuffer({
         size: MAX_SHAPES * 4 * 4 * 2,
         usage: GPU_BUFFER_USAGE.UNIFORM | GPU_BUFFER_USAGE.COPY_DST,
+      })
+
+      const backgroundTexture = device.createTexture({
+        size: {
+          width: backgroundBitmap.width,
+          height: backgroundBitmap.height,
+          depthOrArrayLayers: 1,
+        },
+        format: 'rgba8unorm',
+        usage:
+          GPU_TEXTURE_USAGE.TEXTURE_BINDING |
+          GPU_TEXTURE_USAGE.COPY_DST |
+          GPU_TEXTURE_USAGE.RENDER_ATTACHMENT,
+      })
+
+      device.queue.copyExternalImageToTexture(
+        { source: backgroundBitmap },
+        { texture: backgroundTexture },
+        {
+          width: backgroundBitmap.width,
+          height: backgroundBitmap.height,
+          depthOrArrayLayers: 1,
+        },
+      )
+
+      const backgroundSampler = device.createSampler({
+        magFilter: 'linear',
+        minFilter: 'linear',
+        mipmapFilter: 'linear',
+        addressModeU: 'clamp-to-edge',
+        addressModeV: 'clamp-to-edge',
       })
 
       const shaderModule = device.createShaderModule({ code: GLASS_SHADER })
@@ -503,6 +526,8 @@ export function GlassCanvas() {
         entries: [
           { binding: 0, resource: { buffer: globalsBuffer } },
           { binding: 1, resource: { buffer: shapesBuffer } },
+          { binding: 2, resource: backgroundSampler },
+          { binding: 3, resource: backgroundTexture.createView() },
         ],
       })
 
@@ -528,8 +553,8 @@ export function GlassCanvas() {
 
         globals[0] = nextWidth
         globals[1] = nextHeight
-        globals[2] = nextWidth
-        globals[3] = nextHeight
+        globals[2] = backgroundBitmap.width
+        globals[3] = backgroundBitmap.height
       }
 
       function renderFrame(now: number) {
