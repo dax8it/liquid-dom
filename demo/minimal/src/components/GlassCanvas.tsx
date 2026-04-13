@@ -239,9 +239,23 @@ fn smin(a: f32, b: f32, k: f32) -> f32 {
   return mix(b, a, h) - k * h * (1.0 - h);
 }
 
+fn squircleLength(v: vec2f) -> f32 {
+  let a = abs(v);
+  return pow(pow(a.x, 4.0) + pow(a.y, 4.0), 0.25);
+}
+
+fn circularLength(v: vec2f) -> f32 {
+  return length(v);
+}
+
 fn sdRoundRect(p: vec2f, halfSize: vec2f, radius: f32) -> f32 {
-  let q = abs(p) - halfSize + vec2f(radius);
-  return length(max(q, vec2f(0.0))) + min(max(q.x, q.y), 0.0) - radius;
+  let cornerLimit = min(halfSize.x, halfSize.y);
+  let clampedRadius = min(radius, cornerLimit);
+  let blendDistance = max(globals.controls.z, 0.0001);
+  let circleBlend = clamp((radius - cornerLimit) / blendDistance, 0.0, 1.0);
+  let q = abs(p) - halfSize + vec2f(clampedRadius);
+  let cornerDistance = mix(squircleLength(max(q, vec2f(0.0))), circularLength(max(q, vec2f(0.0))), circleBlend);
+  return cornerDistance + min(max(q.x, q.y), 0.0) - clampedRadius;
 }
 
 fn sceneSdf(pos: vec2f) -> f32 {
@@ -465,6 +479,7 @@ type ShapeRecord = {
 
 type RenderControls = {
   unionSoftness: number
+  cornerBlendDistance: number
   blur: number
   bezelWidth: number
   glassThickness: number
@@ -501,6 +516,7 @@ const DISPLACEMENT_PROFILE_OPTIONS = [
 function createDefaultControls(): RenderControls {
   return {
     unionSoftness: 56,
+    cornerBlendDistance: 120,
     blur: 0,
     bezelWidth: 25,
     glassThickness: 90,
@@ -900,7 +916,7 @@ export function GlassCanvas() {
 
         globals[4] = currentControls.unionSoftness
         globals[5] = currentControls.blur
-        globals[6] = 0
+        globals[6] = currentControls.cornerBlendDistance * currentDpr
         globals[7] = 0
 
         globals[8] = pointerRef.current.x
@@ -1279,6 +1295,15 @@ export function GlassCanvas() {
             step: 0.5,
             precision: 1,
             onChange: (value) => updateControl('unionSoftness', value),
+          })}
+          {renderSlider({
+            label: 'Corner blend',
+            value: controls.cornerBlendDistance,
+            min: 1,
+            max: 120,
+            step: 0.25,
+            precision: 2,
+            onChange: (value) => updateControl('cornerBlendDistance', value),
           })}
           <div className="glass-stage__segmented" role="tablist" aria-label="Displacement profile">
             {DISPLACEMENT_PROFILE_OPTIONS.map((option) => (
