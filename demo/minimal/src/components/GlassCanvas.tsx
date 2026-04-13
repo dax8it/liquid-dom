@@ -45,7 +45,7 @@ function createTextureFromSource(
 }
 
 function createConstrainedCanvas(
-  source: ImageBitmap | HTMLCanvasElement,
+  source: CanvasImageSource,
   width: number,
   height: number,
   maxDimension: number,
@@ -74,6 +74,14 @@ function createConstrainedCanvas(
   }
 }
 
+async function loadImageElement(url: string) {
+  const image = new Image()
+  image.decoding = 'async'
+  image.src = url
+  await image.decode()
+  return image
+}
+
 const BACKGROUND_BLIT_SHADER = /* wgsl */ `
 struct Globals {
   viewport: vec4f,
@@ -82,6 +90,8 @@ struct Globals {
   light: vec4f,
   specular: vec4f,
   rim: vec4f,
+  displacement: vec4f,
+  profile: vec4f,
 };
 
 @group(0) @binding(0) var<uniform> globals: Globals;
@@ -103,6 +113,13 @@ fn coverUv(uv: vec2f) -> vec2f {
   return clamp(vec2f((uv.x - 0.5) * (viewportAspect / imageAspect) + 0.5, uv.y) + focalOffset, vec2f(0.0), vec2f(1.0));
 }
 
+fn tiledUv(uv: vec2f) -> vec2f {
+  let imageSize = max(globals.viewport.zw, vec2f(1.0));
+  let repeatScale = max(globals.viewport.xy / imageSize, vec2f(1.0));
+  let focalOffset = vec2f(0.0, -0.12);
+  return fract(uv * repeatScale + focalOffset);
+}
+
 @vertex
 fn vertexMain(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
   var positions = array<vec2f, 3>(
@@ -120,7 +137,9 @@ fn vertexMain(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
 
 @fragment
 fn fragmentMain(in: VertexOutput) -> @location(0) vec4f {
-  let color = textureSampleLevel(sourceTexture, backgroundSampler, coverUv(in.uv), 0.0).rgb;
+  let imageSmallerThanViewport = globals.viewport.z < globals.viewport.x || globals.viewport.w < globals.viewport.y;
+  let sourceUv = select(coverUv(in.uv), tiledUv(in.uv), imageSmallerThanViewport);
+  let color = textureSampleLevel(sourceTexture, backgroundSampler, sourceUv, 0.0).rgb;
   return vec4f(color, 1.0);
 }
 `
@@ -190,6 +209,8 @@ struct Globals {
   light: vec4f,
   specular: vec4f,
   rim: vec4f,
+  displacement: vec4f,
+  profile: vec4f,
 };
 
 struct ShapeData {
@@ -273,6 +294,47 @@ fn sampleBackgroundBlurred(uv: vec2f) -> vec3f {
   return textureSampleLevel(backgroundTextureBlurred, backgroundSampler, clampedUv, 0.0).rgb;
 }
 
+fn smootherstep(value: f32) -> f32 {
+  let x = clamp(value, 0.0, 1.0);
+  return x * x * x * (x * (x * 6.0 - 15.0) + 10.0);
+}
+
+fn smootherstepDerivative(value: f32) -> f32 {
+  let x = clamp(value, 0.0, 1.0);
+  return 30.0 * x * x * (x * (x - 2.0) + 1.0);
+}
+
+fn convexSquircle(x: f32) -> vec2f {
+  let u = 1.0 - clamp(x, 0.0, 1.0);
+  let inside = max(1.0 - pow(u, 4.0), 0.0001);
+  let height = sqrt(inside);
+  let derivative = 2.0 * pow(u, 3.0) / sqrt(inside);
+  return vec2f(height, derivative);
+}
+
+fn concaveCircle(x: f32) -> vec2f {
+  let squircle = convexSquircle(x);
+  return vec2f(1.0 - squircle.x, -squircle.y);
+}
+
+fn evaluateHeightProfile(profileIndex: f32, x: f32) -> vec2f {
+  if (profileIndex < 0.5) {
+    return convexSquircle(x);
+  }
+
+  if (profileIndex < 1.5) {
+    return concaveCircle(x);
+  }
+
+  let convex = convexSquircle(x);
+  let concave = concaveCircle(x);
+  let blend = smootherstep(x);
+  let blendDerivative = smootherstepDerivative(x);
+  let height = mix(convex.x, concave.x, blend);
+  let derivative = mix(convex.y, concave.y, blend) + (concave.x - convex.x) * blendDerivative;
+  return vec2f(height, derivative);
+}
+
 @vertex
 fn vertexMain(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
   var positions = array<vec2f, 3>(
@@ -299,7 +361,6 @@ fn fragmentMain(in: VertexOutput) -> @location(0) vec4f {
   let sdfBoundaryMask = 1.0 - smoothstep(0.0, 1.2, abs(distance));
 
   let gradient = sdfGradient(fragCoord);
-  let flatNormal = vec3f(0.0, 0.0, 1.0);
   let pixelWidth = max(fwidth(distance), 0.75);
   let rimWidth = max(globals.specular.y, pixelWidth * 2.0);
   let rimBandMask = (1.0 - smoothstep(0.0, pixelWidth, distance)) * (1.0 - smoothstep(rimWidth, rimWidth + pixelWidth, -distance));
@@ -313,14 +374,31 @@ fn fragmentMain(in: VertexOutput) -> @location(0) vec4f {
   let halfVector = normalize(lightDir + viewDir);
   let mirroredHalfVector = normalize(vec3f(-halfVector.xy, halfVector.z));
 
-  let refractionMask = smoothstep(globals.controls.w * 3.0, 0.0, abs(distance));
-  let distortion = globals.controls.y * refractionMask;
-  let refractedUv = in.uv + gradient * distortion / globals.viewport.xy;
+  let bezelWidth = max(globals.displacement.x, pixelWidth * 2.0);
+  let inwardDistance = max(-distance, 0.0);
+  let bezelProgress = clamp(inwardDistance / bezelWidth, 0.0, 1.0);
+  let profileResult = evaluateHeightProfile(globals.profile.x, bezelProgress);
+  let profileHeight = profileResult.x * bezelWidth;
+  let flatHeight = evaluateHeightProfile(globals.profile.x, 1.0).x * bezelWidth;
+  let baseHeight = globals.displacement.y;
+  let surfaceHeight = baseHeight + select(profileHeight, flatHeight, inwardDistance > bezelWidth);
+  let surfaceDerivative = select(profileResult.y, 0.0, inwardDistance > bezelWidth);
+  let clampedSlope = min(surfaceDerivative, tan(1.4835298));
+  let surfaceNormal = normalize(vec3f(gradient * clampedSlope, 1.0));
+  let refractedRay = refract(vec3f(0.0, 0.0, -1.0), surfaceNormal, 1.0 / max(globals.displacement.w, 1.0001));
+  let displacementPx =
+    select(
+      refractedRay.xy / max(-refractedRay.z, 0.0001) * surfaceHeight * globals.displacement.z,
+      vec2f(0.0),
+      fillMask <= 0.0,
+    );
+  let refractedUv = in.uv + displacementPx / globals.viewport.xy;
   let blurred = sampleBackgroundBlurred(refractedUv);
+  let displacementDebugScale = max((globals.displacement.x + globals.displacement.y) * globals.displacement.z * 0.25, 1.0);
   let displacementDebug = vec3f(
-    gradient.x * refractionMask * 0.5 + 0.5,
-    gradient.y * refractionMask * 0.5 + 0.5,
-    refractionMask
+    displacementPx.x / displacementDebugScale * 0.5 + 0.5,
+    displacementPx.y / displacementDebugScale * 0.5 + 0.5,
+    0.0
   );
   let normalDebug = rimNormal * 0.5 + vec3f(0.5);
 
@@ -393,9 +471,12 @@ type ShapeRecord = {
 
 type RenderControls = {
   unionSoftness: number
-  distortion: number
   blur: number
-  refractionWidth: number
+  bezelWidth: number
+  glassThickness: number
+  displacementScale: number
+  glassRefractiveIndex: number
+  displacementProfile: 'convexSquircle' | 'concave' | 'lip'
   motion: number
   lightAzimuth: number
   lightAltitude: number
@@ -417,13 +498,21 @@ const DEBUG_VIEW_OPTIONS = [
   { value: 'displacement', label: 'Displacement' },
   { value: 'normal', label: 'Normal' },
 ] as const
+const DISPLACEMENT_PROFILE_OPTIONS = [
+  { value: 'convexSquircle', label: 'Convex squircle' },
+  { value: 'concave', label: 'Concave' },
+  { value: 'lip', label: 'Lip' },
+] as const
 
 function createDefaultControls(): RenderControls {
   return {
     unionSoftness: 56,
-    distortion: 18,
-    blur: 8.5,
-    refractionWidth: 10,
+    blur: 0,
+    bezelWidth: 25,
+    glassThickness: 90,
+    displacementScale: 1,
+    glassRefractiveIndex: 1.5,
+    displacementProfile: 'convexSquircle',
     motion: 0,
     lightAzimuth: -48,
     lightAltitude: 25,
@@ -439,20 +528,20 @@ function createDefaultControls(): RenderControls {
     shapes: [
       {
         centerX: 0.685,
-        centerY: 0.49,
+        centerY: 0.515,
         halfWidth: 0.095,
         halfHeight: 0.205,
         radius: 0.07,
       },
       {
-        centerX: 0.33,
-        centerY: 0.44,
-        halfWidth: 0.12,
-        halfHeight: 0.22,
-        radius: 0.16,
+        centerX: 0.14,
+        centerY: 0.19,
+        halfWidth: 0.105,
+        halfHeight: 0.05,
+        radius: 0.04,
       },
       {
-        centerX: 0.59,
+        centerX: 0.6,
         centerY: 0.72,
         halfWidth: 0.12,
         halfHeight: 0.07,
@@ -598,24 +687,17 @@ export function GlassCanvas() {
       }
       const targetContext = context
 
-      const backgroundResponse = await fetch(backgroundImageUrl)
-      if (!backgroundResponse.ok) {
-        throw new Error('Background image failed to load.')
-      }
-      const backgroundBlob = await backgroundResponse.blob()
-      const backgroundBitmap = await createImageBitmap(backgroundBlob, {
-        colorSpaceConversion: 'default',
-      })
+      const backgroundImage = await loadImageElement(backgroundImageUrl)
       const sharpTextureSource = createConstrainedCanvas(
-        backgroundBitmap,
-        backgroundBitmap.width,
-        backgroundBitmap.height,
+        backgroundImage,
+        backgroundImage.naturalWidth,
+        backgroundImage.naturalHeight,
         4096,
       )
 
       const presentationFormat = gpuNavigator.gpu.getPreferredCanvasFormat()
       const globalsBuffer = device.createBuffer({
-        size: 24 * 4,
+        size: 32 * 4,
         usage: GPU_BUFFER_USAGE.UNIFORM | GPU_BUFFER_USAGE.COPY_DST,
       })
 
@@ -638,7 +720,6 @@ export function GlassCanvas() {
         sharpTextureSource.width,
         sharpTextureSource.height,
       )
-      backgroundBitmap.close()
 
       const backgroundSampler = device.createSampler({
         magFilter: 'linear',
@@ -698,7 +779,7 @@ export function GlassCanvas() {
         },
       })
 
-      const globals = new Float32Array(24)
+      const globals = new Float32Array(32)
       const blurHorizontalParams = new Float32Array(4)
       const blurVerticalParams = new Float32Array(4)
       const startTime = performance.now()
@@ -778,7 +859,17 @@ export function GlassCanvas() {
         const nextWidth = Math.max(1, Math.round(bounds.width * dpr))
         const nextHeight = Math.max(1, Math.round(bounds.height * dpr))
 
-        if (targetCanvas.width !== nextWidth || targetCanvas.height !== nextHeight) {
+        if (
+          targetCanvas.width !== nextWidth ||
+          targetCanvas.height !== nextHeight ||
+          !backgroundFrameTexture ||
+          !backgroundBlurPingTexture ||
+          !backgroundBlurTexture ||
+          !backgroundBlitBindGroup ||
+          !blurHorizontalBindGroup ||
+          !blurVerticalBindGroup ||
+          !mainBindGroup
+        ) {
           targetCanvas.width = nextWidth
           targetCanvas.height = nextHeight
           rebuildRenderTargets(nextWidth, nextHeight)
@@ -806,11 +897,17 @@ export function GlassCanvas() {
         const resolvedLight = resolveLightDirection(currentControls, pointerRef.current)
         resizeCanvas()
         writeShapes(device, shapesBuffer, targetCanvas.width, targetCanvas.height, elapsedSeconds, currentControls)
+        const displacementProfileIndex =
+          currentControls.displacementProfile === 'convexSquircle'
+            ? 0
+            : currentControls.displacementProfile === 'concave'
+              ? 1
+              : 2
 
         globals[4] = currentControls.unionSoftness
-        globals[5] = currentControls.distortion * currentDpr
-        globals[6] = currentControls.blur
-        globals[7] = currentControls.refractionWidth * currentDpr
+        globals[5] = currentControls.blur
+        globals[6] = 0
+        globals[7] = 0
 
         globals[8] = pointerRef.current.x
         globals[9] = pointerRef.current.y
@@ -836,6 +933,16 @@ export function GlassCanvas() {
         globals[21] = 0
         globals[22] = 0
         globals[23] = 0
+
+        globals[24] = currentControls.bezelWidth * currentDpr
+        globals[25] = currentControls.glassThickness
+        globals[26] = currentControls.displacementScale
+        globals[27] = currentControls.glassRefractiveIndex
+
+        globals[28] = displacementProfileIndex
+        globals[29] = 0
+        globals[30] = 0
+        globals[31] = 0
 
         device.queue.writeBuffer(globalsBuffer, 0, globals)
         blurHorizontalParams[0] = 1
@@ -1019,6 +1126,14 @@ export function GlassCanvas() {
     setCopyStatus('')
   }
 
+  function handleDisplacementProfileChange(displacementProfile: RenderControls['displacementProfile']) {
+    setControls((current) => ({
+      ...current,
+      displacementProfile,
+    }))
+    setCopyStatus('')
+  }
+
   function handleSdfBoundaryToggle() {
     setControls((current) => ({
       ...current,
@@ -1127,9 +1242,9 @@ export function GlassCanvas() {
           <h2>Shape, fusion, frost, and light</h2>
           <p className="glass-stage__description">
             Geometry sliders move and size the rounded-rectangle SDF primitives. Fusion softens the smooth union
-            between them. Optics changes the refraction offset and frosted blur sampled from the procedural
-            background. Lighting uses azimuth and altitude angles to drive the normal-based specular and Fresnel
-            edge response.
+            between them. Optics shapes the glass bezel profile, refractive displacement, and frosted blur sampled
+            from the procedural background. Lighting uses azimuth and altitude angles to drive the rim-only
+            specular response.
           </p>
         </div>
 
@@ -1173,8 +1288,8 @@ export function GlassCanvas() {
             ))}
           </div>
           <p className="glass-stage__debug-copy">
-            Displacement shows the SDF-gradient-driven refraction field near the edge. Normal shows the derived
-            normal map used for specular and Fresnel lighting.
+            Displacement shows the actual refractive displacement field derived from the bezel height profile.
+            Normal shows the rim normal map used for the narrow specular highlight.
           </p>
         </section>
 
@@ -1190,15 +1305,31 @@ export function GlassCanvas() {
             description: 'Smooth-union radius used when multiple SDF shapes fuse together.',
             onChange: (value) => updateControl('unionSoftness', value),
           })}
+          <div className="glass-stage__segmented" role="tablist" aria-label="Displacement profile">
+            {DISPLACEMENT_PROFILE_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                className={
+                  controls.displacementProfile === option.value
+                    ? 'glass-stage__segment glass-stage__segment--active'
+                    : 'glass-stage__segment'
+                }
+                onClick={() => handleDisplacementProfileChange(option.value)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
           {renderSlider({
-            label: 'Refraction',
-            value: controls.distortion,
-            min: 0,
-            max: 40,
+            label: 'Bezel width',
+            value: controls.bezelWidth,
+            min: 1,
+            max: 240,
             step: 0.25,
             precision: 2,
-            description: 'How far the background is displaced along the SDF gradient near the edge.',
-            onChange: (value) => updateControl('distortion', value),
+            description: 'Width of the curved refracting bezel measured inward from the boundary.',
+            onChange: (value) => updateControl('bezelWidth', value),
           })}
           {renderSlider({
             label: 'Frost blur',
@@ -1211,14 +1342,34 @@ export function GlassCanvas() {
             onChange: (value) => updateControl('blur', value),
           })}
           {renderSlider({
-            label: 'Refraction width',
-            value: controls.refractionWidth,
-            min: 1,
+            label: 'Glass thickness',
+            value: controls.glassThickness,
+            min: 0,
+            max: 200,
+            step: 0.25,
+            precision: 2,
+            description: 'Base glass thickness added to the bezel height profile before computing refraction.',
+            onChange: (value) => updateControl('glassThickness', value),
+          })}
+          {renderSlider({
+            label: 'Displacement scale',
+            value: controls.displacementScale,
+            min: 0,
             max: 24,
             step: 0.25,
             precision: 2,
-            description: 'How far inward from the boundary the refraction offset stays active.',
-            onChange: (value) => updateControl('refractionWidth', value),
+            description: 'Multiplier applied to the physically derived lateral displacement through the glass.',
+            onChange: (value) => updateControl('displacementScale', value),
+          })}
+          {renderSlider({
+            label: 'Glass IOR',
+            value: controls.glassRefractiveIndex,
+            min: 1.01,
+            max: 2.2,
+            step: 0.01,
+            precision: 2,
+            description: 'Refractive index of the glass. Air is fixed at 1.0.',
+            onChange: (value) => updateControl('glassRefractiveIndex', value),
           })}
           {renderSlider({
             label: 'Motion',
