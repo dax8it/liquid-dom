@@ -394,15 +394,46 @@ fn fragmentMain(in: VertexOutput) -> @location(0) vec4f {
   let surfaceDerivative = select(profileResult.y, 0.0, inwardDistance > bezelWidth);
   let clampedSlope = min(surfaceDerivative, tan(1.4835298));
   let surfaceNormal = normalize(vec3f(gradient * clampedSlope, 1.0));
-  let refractedRay = refract(vec3f(0.0, 0.0, -1.0), surfaceNormal, 1.0 / max(globals.displacement.w, 1.0001));
-  let displacementPx =
+  let chromaticAberration = max(globals.profile.y, 0.0);
+  let baseIor = max(globals.displacement.w, 1.0001);
+  let refractedRayRed = refract(
+    vec3f(0.0, 0.0, -1.0),
+    surfaceNormal,
+    1.0 / max(baseIor + chromaticAberration, 1.0001),
+  );
+  let refractedRayGreen = refract(vec3f(0.0, 0.0, -1.0), surfaceNormal, 1.0 / baseIor);
+  let refractedRayBlue = refract(
+    vec3f(0.0, 0.0, -1.0),
+    surfaceNormal,
+    1.0 / max(baseIor - chromaticAberration, 1.0001),
+  );
+  let displacementPxRed =
     select(
-      refractedRay.xy / max(-refractedRay.z, 0.0001) * surfaceHeight * globals.displacement.z,
+      refractedRayRed.xy / max(-refractedRayRed.z, 0.0001) * surfaceHeight * globals.displacement.z,
       vec2f(0.0),
       fillMask <= 0.0,
     );
-  let refractedUv = in.uv + displacementPx / globals.viewport.xy;
-  let blurred = sampleBackgroundBlurred(refractedUv);
+  let displacementPxGreen =
+    select(
+      refractedRayGreen.xy / max(-refractedRayGreen.z, 0.0001) * surfaceHeight * globals.displacement.z,
+      vec2f(0.0),
+      fillMask <= 0.0,
+    );
+  let displacementPxBlue =
+    select(
+      refractedRayBlue.xy / max(-refractedRayBlue.z, 0.0001) * surfaceHeight * globals.displacement.z,
+      vec2f(0.0),
+      fillMask <= 0.0,
+    );
+  let displacementPx = (displacementPxRed + displacementPxGreen + displacementPxBlue) / 3.0;
+  let refractedUvRed = in.uv + displacementPxRed / globals.viewport.xy;
+  let refractedUvGreen = in.uv + displacementPxGreen / globals.viewport.xy;
+  let refractedUvBlue = in.uv + displacementPxBlue / globals.viewport.xy;
+  let blurred = vec3f(
+    sampleBackgroundBlurred(refractedUvRed).r,
+    sampleBackgroundBlurred(refractedUvGreen).g,
+    sampleBackgroundBlurred(refractedUvBlue).b,
+  );
   let displacementDebugScale = max((globals.displacement.x + globals.displacement.y) * globals.displacement.z * 0.25, 1.0);
   let displacementDebug = vec3f(
     displacementPx.x / displacementDebugScale * 0.5 + 0.5,
@@ -486,6 +517,7 @@ type RenderControls = {
   glassThickness: number
   displacementScale: number
   glassRefractiveIndex: number
+  chromaticAberration: number
   displacementProfile: 'convexSquircle' | 'concave' | 'lip'
   motion: number
   lightAzimuth: number
@@ -526,6 +558,7 @@ function createDefaultControls(): RenderControls {
     glassThickness: 90,
     displacementScale: 1,
     glassRefractiveIndex: 1.5,
+    chromaticAberration: 0,
     displacementProfile: 'convexSquircle',
     motion: 0,
     lightAzimuth: -122,
@@ -959,7 +992,7 @@ export function GlassCanvas() {
         globals[27] = currentControls.glassRefractiveIndex
 
         globals[28] = displacementProfileIndex
-        globals[29] = 0
+        globals[29] = currentControls.chromaticAberration
         globals[30] = 0
         globals[31] = 0
 
@@ -1374,6 +1407,15 @@ export function GlassCanvas() {
             step: 0.01,
             precision: 2,
             onChange: (value) => updateControl('glassRefractiveIndex', value),
+          })}
+          {renderSlider({
+            label: 'Chromatic aberration',
+            value: controls.chromaticAberration,
+            min: 0,
+            max: 0.4,
+            step: 0.01,
+            precision: 2,
+            onChange: (value) => updateControl('chromaticAberration', value),
           })}
           {renderSlider({
             label: 'Motion',
