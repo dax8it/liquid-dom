@@ -376,17 +376,11 @@ fn fragmentMain(in: VertexOutput) -> @location(0) vec4f {
 
   let gradient = sdfGradient(fragCoord);
   let pixelWidth = max(fwidth(distance), 0.75);
-  let rimWidth = max(globals.specular.y, pixelWidth * 2.0);
+  let rimWidth = max(globals.specular.y, 0.0001);
   let rimBandMask = (1.0 - smoothstep(0.0, pixelWidth, distance)) * (1.0 - smoothstep(rimWidth, rimWidth + pixelWidth, -distance));
-  let rimProgress = clamp(1.0 + distance / rimWidth, 0.0, 1.0);
-  let rimProfile = rimBandMask * pow(rimProgress, 3.4);
-  let rimTilt = tan(globals.rim.x);
-  let rimNormal = normalize(vec3f(-gradient * rimProfile * rimTilt, 1.0));
-
-  let lightDir = normalize(globals.light.xyz);
-  let viewDir = vec3f(0.0, 0.0, 1.0);
-  let halfVector = normalize(lightDir + viewDir);
-  let mirroredHalfVector = normalize(vec3f(-halfVector.xy, halfVector.z));
+  let rimNormal = gradient;
+  let lightDir = normalize(select(vec2f(1.0, 0.0), globals.light.xy, dot(globals.light.xy, globals.light.xy) > 0.0001));
+  let mirroredLightDir = -lightDir;
 
   let bezelWidth = max(globals.displacement.x, pixelWidth * 2.0);
   let inwardDistance = max(-distance, 0.0);
@@ -414,17 +408,15 @@ fn fragmentMain(in: VertexOutput) -> @location(0) vec4f {
     displacementPx.y / displacementDebugScale * 0.5 + 0.5,
     0.0
   );
-  let normalDebug = rimNormal * 0.5 + vec3f(0.5);
+  let normalDebug = vec3f(rimNormal * 0.5 + vec2f(0.5), 0.5);
 
   let glass = blurred;
 
-  let rimSpecular = pow(max(dot(rimNormal, halfVector), 0.0), globals.specular.z);
-  let mirroredRimSpecular = pow(max(dot(rimNormal, mirroredHalfVector), 0.0), globals.specular.z);
-
-  let borderHue = 0.5 + 0.5 * gradient.x;
-  let prismaticBorder = mix(vec3f(0.48, 0.88, 0.96), vec3f(1.0, 0.73, 0.9), borderHue);
-  let specularTint = mix(vec3f(1.0), prismaticBorder, globals.specular.w);
-  let borderLight = specularTint * (rimSpecular + mirroredRimSpecular) * globals.specular.x * rimBandMask;
+  let rimSpecular = pow(max(dot(rimNormal, lightDir), 0.0), globals.specular.z);
+  let mirroredRimSpecular = pow(max(dot(rimNormal, mirroredLightDir), 0.0), globals.specular.z);
+  let specularOpacity = clamp((rimSpecular + mirroredRimSpecular) * globals.specular.x, 0.0, 1.0);
+  let finalSpecularOpacity = specularOpacity * globals.specular.w;
+  let borderLight = vec3f(1.0) * finalSpecularOpacity * rimBandMask;
 
   if (globals.light.w > 0.5 && globals.light.w < 1.5) {
     return vec4f(displacementDebug, 1.0);
@@ -488,12 +480,10 @@ type RenderControls = {
   displacementProfile: 'convexSquircle' | 'concave' | 'lip'
   motion: number
   lightAzimuth: number
-  lightAltitude: number
   specularStrength: number
   specularWidth: number
-  rimAngle: number
   specularSharpness: number
-  specularTint: number
+  specularOpacity: number
   showSdfBoundary: boolean
   showLight: boolean
   lightFollowsPointer: boolean
@@ -524,24 +514,22 @@ function createDefaultControls(): RenderControls {
     glassRefractiveIndex: 1.5,
     displacementProfile: 'convexSquircle',
     motion: 0,
-    lightAzimuth: -48,
-    lightAltitude: 25,
-    specularStrength: 2,
-    specularWidth: 10.75,
-    rimAngle: 27,
-    specularSharpness: 46,
-    specularTint: 0,
+    lightAzimuth: -122,
+    specularStrength: 2.65,
+    specularWidth: 0.7,
+    specularSharpness: 4,
+    specularOpacity: 0.4,
     showSdfBoundary: false,
     showLight: false,
     lightFollowsPointer: false,
     debugView: 'final',
     shapes: [
       {
-        centerX: 1597.42,
+        centerX: 1144,
         centerY: 594.83,
         halfWidth: 221.54,
-        halfHeight: 236.78,
-        radius: 80.85,
+        halfHeight: 10,
+        radius: 598,
       },
       {
         centerX: 326.48,
@@ -562,7 +550,7 @@ function createDefaultControls(): RenderControls {
 }
 
 function resolveLightDirection(
-  controls: Pick<RenderControls, 'lightAzimuth' | 'lightAltitude' | 'lightFollowsPointer'>,
+  controls: Pick<RenderControls, 'lightAzimuth' | 'lightFollowsPointer'>,
   pointer: { x: number; y: number },
 ) {
   const pointerInfluence = controls.lightFollowsPointer ? 1 : 0
@@ -574,17 +562,14 @@ function resolveLightDirection(
       ? (Math.atan2(pointerVectorY, pointerVectorX) * 180) / Math.PI
       : controls.lightAzimuth
   const effectiveAzimuth = controls.lightAzimuth * (1 - pointerInfluence) + pointerAzimuth * pointerInfluence
-  const effectiveAltitude = clamp(controls.lightAltitude, 5, 85)
   const effectiveAzimuthRadians = degreesToRadians(effectiveAzimuth)
-  const effectiveAltitudeRadians = degreesToRadians(effectiveAltitude)
 
   return {
     azimuth: effectiveAzimuth,
-    altitude: effectiveAltitude,
     direction: {
-      x: Math.cos(effectiveAltitudeRadians) * Math.cos(effectiveAzimuthRadians),
-      y: Math.cos(effectiveAltitudeRadians) * Math.sin(effectiveAzimuthRadians),
-      z: Math.sin(effectiveAltitudeRadians),
+      x: Math.cos(effectiveAzimuthRadians),
+      y: Math.sin(effectiveAzimuthRadians),
+      z: 0,
     },
   }
 }
@@ -924,7 +909,7 @@ export function GlassCanvas() {
 
         globals[12] = resolvedLight.direction.x
         globals[13] = resolvedLight.direction.y
-        globals[14] = resolvedLight.direction.z
+        globals[14] = 0
         globals[15] =
           currentControls.debugView === 'displacement'
             ? 1
@@ -935,9 +920,9 @@ export function GlassCanvas() {
         globals[16] = currentControls.specularStrength
         globals[17] = currentControls.specularWidth * currentDpr
         globals[18] = currentControls.specularSharpness
-        globals[19] = currentControls.specularTint
+        globals[19] = currentControls.specularOpacity
 
-        globals[20] = degreesToRadians(clamp(currentControls.rimAngle, 0, 89.5))
+        globals[20] = 0
         globals[21] = 0
         globals[22] = 0
         globals[23] = 0
@@ -1408,15 +1393,6 @@ export function GlassCanvas() {
             precision: 0,
             onChange: (value) => updateControl('lightAzimuth', value),
           })}
-          {renderSlider({
-            label: 'Altitude',
-            value: controls.lightAltitude,
-            min: 5,
-            max: 85,
-            step: 1,
-            precision: 0,
-            onChange: (value) => updateControl('lightAltitude', value),
-          })}
         </section>
 
         <section className="glass-stage__group">
@@ -1425,7 +1401,7 @@ export function GlassCanvas() {
             label: 'Strength',
             value: controls.specularStrength,
             min: 0,
-            max: 2,
+            max: 20,
             step: 0.05,
             precision: 2,
             onChange: (value) => updateControl('specularStrength', value),
@@ -1433,38 +1409,29 @@ export function GlassCanvas() {
           {renderSlider({
             label: 'Width',
             value: controls.specularWidth,
-            min: 2,
-            max: 40,
-            step: 0.25,
+            min: 0,
+            max: 3,
+            step: 0.05,
             precision: 2,
             onChange: (value) => updateControl('specularWidth', value),
           })}
           {renderSlider({
-            label: 'Rim angle',
-            value: controls.rimAngle,
-            min: 0,
-            max: 89.5,
-            step: 0.5,
-            precision: 1,
-            onChange: (value) => updateControl('rimAngle', value),
-          })}
-          {renderSlider({
             label: 'Sharpness',
             value: controls.specularSharpness,
-            min: 8,
-            max: 192,
+            min: 0,
+            max: 50,
             step: 1,
             precision: 0,
             onChange: (value) => updateControl('specularSharpness', value),
           })}
           {renderSlider({
-            label: 'Tint',
-            value: controls.specularTint,
+            label: 'Opacity',
+            value: controls.specularOpacity,
             min: 0,
             max: 1,
             step: 0.01,
             precision: 2,
-            onChange: (value) => updateControl('specularTint', value),
+            onChange: (value) => updateControl('specularOpacity', value),
           })}
         </section>
 
