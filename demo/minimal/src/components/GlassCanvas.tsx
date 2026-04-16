@@ -366,10 +366,6 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max)
 }
 
-function easeInOutSine(value: number) {
-  return -(Math.cos(Math.PI * value) - 1) * 0.5
-}
-
 function degreesToRadians(value: number) {
   return (value * Math.PI) / 180
 }
@@ -401,7 +397,6 @@ type RenderControls = {
   glassRefractiveIndex: number
   chromaticAberration: number
   displacementProfile: 'convexSquircle' | 'concave' | 'lip'
-  motion: number
   lightAzimuth: number
   specularStrength: number
   specularWidth: number
@@ -434,47 +429,46 @@ const DISPLACEMENT_PROFILE_OPTIONS = [
 
 function createDefaultControls(): RenderControls {
   return {
-    unionSoftness: 56,
+    unionSoftness: 42.5,
     cornerBlendDistance: 120,
-    blur: 0,
-    bezelWidth: 25,
+    blur: 3.75,
+    bezelWidth: 13.75,
     glassThickness: 90,
     displacementScale: 1,
     glassRefractiveIndex: 1.5,
     chromaticAberration: 0,
     displacementProfile: 'convexSquircle',
-    motion: 0,
-    lightAzimuth: -122,
-    specularStrength: 2.65,
-    specularWidth: 0.7,
-    specularSharpness: 4,
-    specularOpacity: 0.4,
-    specularColorSaturation: 1,
-    specularColorOpacity: 0,
-    glassTintBrightness: 1,
-    glassTintOpacity: 0,
+    lightAzimuth: -52,
+    specularStrength: 1.4,
+    specularWidth: 0.3,
+    specularSharpness: 2,
+    specularOpacity: 0.15,
+    specularColorSaturation: 2,
+    specularColorOpacity: 0.3,
+    glassTintBrightness: 0.15,
+    glassTintOpacity: 0.7,
     showSdfBoundary: false,
     showLight: false,
     lightFollowsPointer: false,
-    debugView: 'final',
+    debugView: 'displacement',
     shapes: [
       {
-        centerX: 1144,
-        centerY: 594.83,
+        centerX: 393,
+        centerY: 198,
         halfWidth: 221.54,
-        halfHeight: 10,
+        halfHeight: 24,
         radius: 598,
       },
       {
-        centerX: 326.48,
-        centerY: 219.45,
-        halfWidth: 244.86,
-        halfHeight: 57.75,
-        radius: 46.2,
+        centerX: 142,
+        centerY: 198,
+        halfWidth: 24,
+        halfHeight: 24,
+        radius: 266,
       },
       {
-        centerX: 862.84,
-        centerY: 831.6,
+        centerX: 794,
+        centerY: 694,
         halfWidth: 279.84,
         halfHeight: 80.85,
         radius: 80.85,
@@ -516,36 +510,31 @@ function writeShapes(
   device: GPUDevice,
   buffer: GPUBuffer,
   dpr: number,
-  elapsedSeconds: number,
   controls: RenderControls,
 ) {
-  const motion = controls.motion
-  const wave = easeInOutSine((Math.sin(elapsedSeconds * 0.55) + 1) * 0.5) * motion
-  const sway = Math.sin(elapsedSeconds * 0.4) * motion
-  const drift = Math.cos(elapsedSeconds * 0.9) * motion
   const [shapeA, shapeB, shapeC] = controls.shapes
 
   const shapes: ShapeRecord[] = [
     {
       centerX: shapeA.centerX * dpr,
-      centerY: (shapeA.centerY + sway * 13.86) * dpr,
-      halfWidth: (shapeA.halfWidth + 46.64 * wave) * dpr,
-      halfHeight: (shapeA.halfHeight + 17.325 * (1 - wave)) * dpr,
+      centerY: shapeA.centerY * dpr,
+      halfWidth: shapeA.halfWidth * dpr,
+      halfHeight: shapeA.halfHeight * dpr,
       radius: shapeA.radius * dpr,
       active: 1,
     },
     {
-      centerX: (shapeB.centerX + wave * 186.56) * dpr,
-      centerY: (shapeB.centerY + drift * 23.1) * dpr,
-      halfWidth: (shapeB.halfWidth + 27.984 * (1 - wave)) * dpr,
-      halfHeight: (shapeB.halfHeight + 32.34 * wave) * dpr,
+      centerX: shapeB.centerX * dpr,
+      centerY: shapeB.centerY * dpr,
+      halfWidth: shapeB.halfWidth * dpr,
+      halfHeight: shapeB.halfHeight * dpr,
       radius: shapeB.radius * dpr,
       active: 1,
     },
     {
       centerX: shapeC.centerX * dpr,
       centerY: shapeC.centerY * dpr,
-      halfWidth: (shapeC.halfWidth + 41.976 * motion * Math.sin(elapsedSeconds * 0.48 + 0.8)) * dpr,
+      halfWidth: shapeC.halfWidth * dpr,
       halfHeight: shapeC.halfHeight * dpr,
       radius: shapeC.radius * dpr,
       active: 1,
@@ -701,7 +690,6 @@ export function GlassCanvas() {
       const globals = new Float32Array(32)
       const blurHorizontalParams = new Float32Array(4)
       const blurVerticalParams = new Float32Array(4)
-      const startTime = performance.now()
       let currentDpr = 1
       let backgroundFrameTexture: GPUTexture | null = null
       let backgroundBlurPingTexture: GPUTexture | null = null
@@ -814,16 +802,15 @@ export function GlassCanvas() {
         copyBackgroundElement(targetCanvas.width, targetCanvas.height)
       }
 
-      function renderFrame(now: number) {
+      function renderFrame() {
         if (disposed) {
           return
         }
 
-        const elapsedSeconds = (now - startTime) * 0.001
         const currentControls = controlsRef.current
         const resolvedLight = resolveLightDirection(currentControls, pointerRef.current)
         resizeCanvas()
-        writeShapes(device, shapesBuffer, currentDpr, elapsedSeconds, currentControls)
+        writeShapes(device, shapesBuffer, currentDpr, currentControls)
         const displacementProfileIndex =
           currentControls.displacementProfile === 'convexSquircle'
             ? 0
@@ -946,7 +933,7 @@ export function GlassCanvas() {
         pass.end()
 
         device.queue.submit([encoder.finish()])
-        frameRef.current = requestAnimationFrame(renderFrame)
+        frameRef.current = requestAnimationFrame(() => renderFrame())
       }
 
       resizeObserver = new ResizeObserver(() => {
@@ -956,7 +943,7 @@ export function GlassCanvas() {
 
       setStatus('')
       targetCanvas.requestPaint()
-      frameRef.current = requestAnimationFrame(renderFrame)
+      frameRef.current = requestAnimationFrame(() => renderFrame())
     }
 
     init().catch((error: unknown) => {
@@ -1339,15 +1326,6 @@ export function GlassCanvas() {
             step: 0.01,
             precision: 2,
             onChange: (value) => updateControl('chromaticAberration', value),
-          })}
-          {renderSlider({
-            label: 'Motion',
-            value: controls.motion,
-            min: 0,
-            max: 1.5,
-            step: 0.05,
-            precision: 2,
-            onChange: (value) => updateControl('motion', value),
           })}
         </section>
 
