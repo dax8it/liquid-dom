@@ -90,6 +90,11 @@
   color: #1c2432;
 }
 
+.glass-stage__controls--collapsed {
+  width: min(16rem, calc(100vw - 2rem));
+  max-height: none;
+}
+
 .glass-stage__controls-copy h2,
 .glass-stage__group h3,
 .glass-stage__slider-head,
@@ -109,6 +114,21 @@
 .glass-stage__controls-copy h2 {
   font-size: 1.15rem;
   line-height: 1.2;
+}
+
+.glass-stage__controls-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.glass-stage__controls-body {
+  margin-top: 1rem;
+}
+
+.glass-stage__controls-body--hidden {
+  display: none;
 }
 
 .glass-stage__description {
@@ -140,6 +160,10 @@
 .glass-stage__button--ghost {
   background: rgba(255, 255, 255, 0.55);
   color: #1f2634;
+}
+
+.glass-stage__collapse-button {
+  flex-shrink: 0;
 }
 
 .glass-stage__copy-status {

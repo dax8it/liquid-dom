@@ -419,6 +419,7 @@ type RenderControls = {
 }
 
 const CONTROL_STORAGE_KEY = 'liquid-glass-controls'
+const CONTROL_PANEL_COLLAPSED_STORAGE_KEY = 'liquid-glass-controls-collapsed'
 const SHAPE_LABELS = ['Primary slab', 'Orbital blob', 'Lower bridge'] as const
 const DEBUG_VIEW_OPTIONS = [
   { value: 'final', label: 'Final' },
@@ -579,6 +580,9 @@ export function GlassCanvas() {
   const pointerRef = useRef({ x: 0.5, y: 0.5 })
   const [pointerState, setPointerState] = useState({ x: 0.5, y: 0.5 })
   const [controls, setControls] = useState<RenderControls>(() => loadStoredControls())
+  const [isControlsCollapsed, setIsControlsCollapsed] = useState<boolean>(() =>
+    loadStoredState(CONTROL_PANEL_COLLAPSED_STORAGE_KEY, false),
+  )
   const controlsRef = useRef<RenderControls>(controls)
   const [status, setStatus] = useState('Initializing WebGPU renderer...')
   const [copyStatus, setCopyStatus] = useState('')
@@ -590,6 +594,10 @@ export function GlassCanvas() {
   useEffect(() => {
     saveStoredState(CONTROL_STORAGE_KEY, controls)
   }, [controls])
+
+  useEffect(() => {
+    saveStoredState(CONTROL_PANEL_COLLAPSED_STORAGE_KEY, isControlsCollapsed)
+  }, [isControlsCollapsed])
 
   useEffect(() => {
     let disposed = false
@@ -1065,6 +1073,10 @@ export function GlassCanvas() {
     setCopyStatus('')
   }
 
+  function handleControlsCollapseToggle() {
+    setIsControlsCollapsed((current) => !current)
+  }
+
   function renderSlider({
     label,
     value,
@@ -1142,7 +1154,36 @@ export function GlassCanvas() {
           <div className="glass-stage__light-center" />
         </div>
       ) : null}
-      <aside className="glass-stage__controls">
+      <aside
+        className={
+          isControlsCollapsed
+            ? 'glass-stage__controls glass-stage__controls--collapsed'
+            : 'glass-stage__controls'
+        }
+      >
+        <div className="glass-stage__controls-header">
+          <div className="glass-stage__controls-copy">
+            <p className="glass-stage__eyebrow">Renderer</p>
+            <h2>Controls</h2>
+          </div>
+          <button
+            type="button"
+            className="glass-stage__button glass-stage__button--ghost glass-stage__collapse-button"
+            onClick={handleControlsCollapseToggle}
+            aria-expanded={!isControlsCollapsed}
+            aria-controls="glass-stage-controls-body"
+          >
+            {isControlsCollapsed ? 'Expand' : 'Collapse'}
+          </button>
+        </div>
+        <div
+          id="glass-stage-controls-body"
+          className={
+            isControlsCollapsed
+              ? 'glass-stage__controls-body glass-stage__controls-body--hidden'
+              : 'glass-stage__controls-body'
+          }
+        >
         <div className="glass-stage__toolbar">
           <button type="button" className="glass-stage__button" onClick={handleCopySettings}>
             Copy settings
@@ -1450,6 +1491,7 @@ export function GlassCanvas() {
             })}
           </section>
         ))}
+        </div>
       </aside>
       {status ? <div className="glass-stage__status">{status}</div> : null}
     </div>
