@@ -762,8 +762,8 @@ export class Renderer {
     this.globals[10] = container.ior
     this.globals[11] = container.dispersion
 
-    this.globals[12] = Math.cos(container.lightDirection)
-    this.globals[13] = Math.sin(container.lightDirection)
+    this.globals[12] = Math.sin(container.lightDirection)
+    this.globals[13] = -Math.cos(container.lightDirection)
     this.globals[14] = 0
     this.globals[15] = 0
 
@@ -772,9 +772,9 @@ export class Renderer {
     this.globals[18] = container.specularSharpness
     this.globals[19] = container.specularOpacity
 
-    this.globals[20] = 0
+    this.globals[20] = container.oppositeSpecularStrength
     this.globals[21] = container.reflectionOffset * dpr
-    this.globals[22] = 0
+    this.globals[22] = container.oppositeSpecularWidth * dpr
     this.globals[23] = shapeCount
 
     this.globals[24] = container.tint.r

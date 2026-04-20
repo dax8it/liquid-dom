@@ -26,6 +26,8 @@ export type ContainerInit = Partial<Transform> & {
   lightDirection?: number
   specularStrength?: number
   specularWidth?: number
+  oppositeSpecularStrength?: number
+  oppositeSpecularWidth?: number
   specularSharpness?: number
   specularOpacity?: number
   reflectionOffset?: number
@@ -204,12 +206,16 @@ export class Container implements Transform {
   dispersion = 0
   /** Surface profile used for the beveled edge. */
   surfaceProfile: SurfaceProfile = 'convex'
-  /** 2D light direction in radians. */
-  lightDirection = toRadians(-52)
+  /** 2D light direction in radians, where 0 points upward in screen space. */
+  lightDirection = -Math.PI / 4
   /** Multiplier applied to the white specular term. */
   specularStrength = 1.4
   /** Width of the specular band in CSS pixels. */
   specularWidth = 0.3
+  /** Multiplier applied to the opposite-side white specular term. */
+  oppositeSpecularStrength = 1.4
+  /** Width of the opposite-side specular band in CSS pixels. */
+  oppositeSpecularWidth = 0.3
   /** Exponent controlling specular falloff. */
   specularSharpness = 2
   /** Final opacity of the white specular contribution. */
@@ -262,6 +268,12 @@ export class Container implements Transform {
     }
     if (options.specularWidth !== undefined) {
       this.specularWidth = options.specularWidth
+    }
+    if (options.oppositeSpecularStrength !== undefined) {
+      this.oppositeSpecularStrength = options.oppositeSpecularStrength
+    }
+    if (options.oppositeSpecularWidth !== undefined) {
+      this.oppositeSpecularWidth = options.oppositeSpecularWidth
     }
     if (options.specularSharpness !== undefined) {
       this.specularSharpness = options.specularSharpness

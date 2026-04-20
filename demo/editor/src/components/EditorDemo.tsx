@@ -84,6 +84,8 @@ type ContainerNode = BaseNode & {
   lightDirection: number
   specularStrength: number
   specularWidth: number
+  oppositeSpecularStrength: number
+  oppositeSpecularWidth: number
   specularSharpness: number
   specularOpacity: number
   reflectionOffset: number
@@ -208,9 +210,11 @@ function createContainerNode(overrides: Partial<ContainerNode> = {}): ContainerN
     ior: overrides.ior ?? 1.5,
     dispersion: overrides.dispersion ?? 0,
     surfaceProfile: overrides.surfaceProfile ?? 'convex',
-    lightDirection: overrides.lightDirection ?? -0.9,
+    lightDirection: overrides.lightDirection ?? -Math.PI / 4,
     specularStrength: overrides.specularStrength ?? 1.4,
     specularWidth: overrides.specularWidth ?? 0.3,
+    oppositeSpecularStrength: overrides.oppositeSpecularStrength ?? overrides.specularStrength ?? 1.4,
+    oppositeSpecularWidth: overrides.oppositeSpecularWidth ?? overrides.specularWidth ?? 0.3,
     specularSharpness: overrides.specularSharpness ?? 2,
     specularOpacity: overrides.specularOpacity ?? 0.15,
     reflectionOffset: overrides.reflectionOffset ?? 18,
@@ -244,7 +248,7 @@ function createDefaultSceneState(): SceneState {
             zIndex: 1,
             tint: { r: 0.18, g: 0.18, b: 0.18, a: 0.7 },
             blur: 4,
-            lightDirection: -0.8,
+            lightDirection: -Math.PI / 4,
             children: [
               createGlassNode({
                 name: 'Header slab',
@@ -473,6 +477,8 @@ function buildRuntimeNode(node: RootNode): RuntimeBuildResult {
     lightDirection: node.lightDirection,
     specularStrength: node.specularStrength,
     specularWidth: node.specularWidth,
+    oppositeSpecularStrength: node.oppositeSpecularStrength,
+    oppositeSpecularWidth: node.oppositeSpecularWidth,
     specularSharpness: node.specularSharpness,
     specularOpacity: node.specularOpacity,
     reflectionOffset: node.reflectionOffset,
@@ -764,6 +770,18 @@ function InspectorControls({
                 step: 0.05,
                 onChange: (value: number) =>
                   updateSelectedNode((node) => ({ ...node, specularWidth: value })),
+              },
+              oppositeSpecularStrength: {
+                value: selectedNode.oppositeSpecularStrength,
+                step: 0.05,
+                onChange: (value: number) =>
+                  updateSelectedNode((node) => ({ ...node, oppositeSpecularStrength: value })),
+              },
+              oppositeSpecularWidth: {
+                value: selectedNode.oppositeSpecularWidth,
+                step: 0.05,
+                onChange: (value: number) =>
+                  updateSelectedNode((node) => ({ ...node, oppositeSpecularWidth: value })),
               },
               specularSharpness: {
                 value: selectedNode.specularSharpness,
