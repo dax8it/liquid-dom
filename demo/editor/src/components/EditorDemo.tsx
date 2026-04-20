@@ -86,9 +86,7 @@ type ContainerNode = BaseNode & {
   specularWidth: number
   specularSharpness: number
   specularOpacity: number
-  edgeSaturation: number
   reflectionOffset: number
-  reflectionSaturation: number
   tint: TintColor
   zIndex: number
   children: GlassNode[]
@@ -215,9 +213,7 @@ function createContainerNode(overrides: Partial<ContainerNode> = {}): ContainerN
     specularWidth: overrides.specularWidth ?? 0.3,
     specularSharpness: overrides.specularSharpness ?? 2,
     specularOpacity: overrides.specularOpacity ?? 0.15,
-    edgeSaturation: overrides.edgeSaturation ?? 1.7,
     reflectionOffset: overrides.reflectionOffset ?? 18,
-    reflectionSaturation: overrides.reflectionSaturation ?? 0.7,
     tint: overrides.tint ?? { r: 0.15, g: 0.15, b: 0.15, a: 0.7 },
     zIndex: overrides.zIndex ?? 0,
     children: overrides.children ?? [],
@@ -281,7 +277,6 @@ function createDefaultSceneState(): SceneState {
                 blur: 6,
                 tint: { r: 0.24, g: 0.24, b: 0.24, a: 0.7 },
                 specularStrength: 2.2,
-                edgeSaturation: 2.4,
                 children: [
                   createGlassNode({
                     name: 'Bridge',
@@ -480,9 +475,7 @@ function buildRuntimeNode(node: RootNode): RuntimeBuildResult {
     specularWidth: node.specularWidth,
     specularSharpness: node.specularSharpness,
     specularOpacity: node.specularOpacity,
-    edgeSaturation: node.edgeSaturation,
     reflectionOffset: node.reflectionOffset,
-    reflectionSaturation: node.reflectionSaturation,
     tint: node.tint,
     zIndex: node.zIndex,
   })
@@ -784,23 +777,11 @@ function InspectorControls({
                 onChange: (value: number) =>
                   updateSelectedNode((node) => ({ ...node, specularOpacity: value })),
               },
-              edgeSaturation: {
-                value: selectedNode.edgeSaturation,
-                step: 0.05,
-                onChange: (value: number) =>
-                  updateSelectedNode((node) => ({ ...node, edgeSaturation: value })),
-              },
               reflectionOffset: {
                 value: selectedNode.reflectionOffset,
                 step: 0.25,
                 onChange: (value: number) =>
                   updateSelectedNode((node) => ({ ...node, reflectionOffset: value })),
-              },
-              reflectionSaturation: {
-                value: selectedNode.reflectionSaturation,
-                step: 0.05,
-                onChange: (value: number) =>
-                  updateSelectedNode((node) => ({ ...node, reflectionSaturation: value })),
               },
               tintColor: {
                 value: tintToHex(selectedNode.tint),

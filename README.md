@@ -239,9 +239,7 @@ new Container(options?: Partial<Transform> & {
   specularWidth?: number
   specularSharpness?: number
   specularOpacity?: number
-  edgeSaturation?: number
   reflectionOffset?: number
-  reflectionSaturation?: number
   tint?: RgbaColor
   zIndex?: number
 })
@@ -284,12 +282,8 @@ Rendering properties:
   - highlight falloff exponent
 - `specularOpacity`
   - final white specular opacity
-- `edgeSaturation`
-  - saturation boost for the refracted colored edge component
 - `reflectionOffset`
   - offset distance for the reflected edge sample
-- `reflectionSaturation`
-  - saturation boost for the reflection sample
 - `tint`
   - RGBA color layered over the refracted glass interior
 - `zIndex`
@@ -310,9 +304,7 @@ Defaults:
 - `specularWidth = 0.3`
 - `specularSharpness = 2`
 - `specularOpacity = 0.15`
-- `edgeSaturation = 1.7`
 - `reflectionOffset = 18`
-- `reflectionSaturation = 0.7`
 - `tint = { r: 0.15, g: 0.15, b: 0.15, a: 0.7 }`
 - `zIndex = 0`
 

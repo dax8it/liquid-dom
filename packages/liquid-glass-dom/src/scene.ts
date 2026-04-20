@@ -28,9 +28,7 @@ export type ContainerInit = Partial<Transform> & {
   specularWidth?: number
   specularSharpness?: number
   specularOpacity?: number
-  edgeSaturation?: number
   reflectionOffset?: number
-  reflectionSaturation?: number
   tint?: RgbaColor
   zIndex?: number
 }
@@ -216,12 +214,8 @@ export class Container implements Transform {
   specularSharpness = 2
   /** Final opacity of the white specular contribution. */
   specularOpacity = 0.15
-  /** Saturation multiplier for the colored edge/refraction component. */
-  edgeSaturation = 1.7
   /** Offset in CSS pixels used when sampling the reflection color. */
   reflectionOffset = 18
-  /** Saturation multiplier for the reflection component. */
-  reflectionSaturation = 0.7
   /** RGBA tint color layered over the refracted glass interior. */
   tint: RgbaColor = { r: 0.15, g: 0.15, b: 0.15, a: 0.7 }
   /** Draw order among containers; higher values render later. */
@@ -275,14 +269,8 @@ export class Container implements Transform {
     if (options.specularOpacity !== undefined) {
       this.specularOpacity = options.specularOpacity
     }
-    if (options.edgeSaturation !== undefined) {
-      this.edgeSaturation = options.edgeSaturation
-    }
     if (options.reflectionOffset !== undefined) {
       this.reflectionOffset = options.reflectionOffset
-    }
-    if (options.reflectionSaturation !== undefined) {
-      this.reflectionSaturation = options.reflectionSaturation
     }
     if (options.tint !== undefined) {
       this.tint = cloneColor(options.tint)

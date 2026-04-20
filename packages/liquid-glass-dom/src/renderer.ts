@@ -772,9 +772,9 @@ export class Renderer {
     this.globals[18] = container.specularSharpness
     this.globals[19] = container.specularOpacity
 
-    this.globals[20] = container.edgeSaturation
+    this.globals[20] = 0
     this.globals[21] = container.reflectionOffset * dpr
-    this.globals[22] = container.reflectionSaturation
+    this.globals[22] = 0
     this.globals[23] = shapeCount
 
     this.globals[24] = container.tint.r

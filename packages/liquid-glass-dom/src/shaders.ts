@@ -297,25 +297,18 @@ fn fragmentMain(in: VertexOutput) -> @location(0) vec4f {
     sampleBackgroundBlurred(refractedUvGreen).g,
     sampleBackgroundBlurred(refractedUvBlue).b,
   );
-
-  // The colored edge component starts from the refracted blur and can be overdriven via
-  // saturation. A second sample is taken farther out along the rim normal to fake reflection.
   let reflectedUv = in.uv + rimNormal * globals.specularSecondary.y / globals.canvas.xy;
   let reflectedColor = sampleBackgroundBlurred(reflectedUv);
   let glass = mix(refractedColor, globals.tint.rgb, globals.tint.a);
   let refractedLuma = dot(refractedColor, vec3f(0.2126, 0.7152, 0.0722));
   let reflectedLuma = dot(reflectedColor, vec3f(0.2126, 0.7152, 0.0722));
-  let refractedBase = vec3f(refractedLuma);
-  let reflectedBase = vec3f(reflectedLuma);
-  let refractedEdgeColor = mix(refractedBase, refractedColor, 1.0 + globals.specularSecondary.x);
-  let reflectedEdgeColor = mix(reflectedBase, reflectedColor, 1.0 + globals.specularSecondary.z);
 
   // Reflection only shows when the reflected sample is bright enough and the refracted sample
   // underneath is dark enough to accept it.
   let reflectionPresence = smoothstep(0.2, 0.85, reflectedLuma);
   let refractionAcceptance = 1.0 - smoothstep(0.35, 0.85, refractedLuma);
   let reflectionBlend = reflectionPresence * refractionAcceptance;
-  let edgeSpecularColor = mix(refractedEdgeColor, reflectedEdgeColor, reflectionBlend);
+  let edgeSpecularColor = mix(refractedColor, reflectedColor, reflectionBlend);
 
   // White specular is a separate rim-only highlight driven by 2D normal/light alignment and
   // then masked back to the configured rim band.
