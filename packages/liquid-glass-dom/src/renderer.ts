@@ -1375,10 +1375,12 @@ export class Renderer {
 
     const activeGlasses = new Set<Glass>()
     const activeEntries: GlassContentEntry[] = []
+    const containerOrderByEntry = new Map<GlassContentEntry, number>()
     let layoutChanged = false
     let contentChanged = false
 
-    for (const entry of containers) {
+    for (let containerOrder = 0; containerOrder < containers.length; containerOrder += 1) {
+      const entry = containers[containerOrder]
       const containerTransform = entry.transform
 
       for (const glass of entry.container._children) {
@@ -1443,6 +1445,7 @@ export class Renderer {
         )
 
         activeEntries.push(contentEntry)
+        containerOrderByEntry.set(contentEntry, containerOrder)
       }
     }
 
@@ -1453,7 +1456,9 @@ export class Renderer {
 
     const sortedInteractionEntries = [...activeEntries].sort(
       (left, right) =>
-        left.glass.zIndex - right.glass.zIndex || (entryOrder.get(left) ?? 0) - (entryOrder.get(right) ?? 0),
+        (containerOrderByEntry.get(left) ?? 0) - (containerOrderByEntry.get(right) ?? 0) ||
+        left.glass.zIndex - right.glass.zIndex ||
+        (entryOrder.get(left) ?? 0) - (entryOrder.get(right) ?? 0),
     )
     for (let index = 0; index < sortedInteractionEntries.length; index += 1) {
       sortedInteractionEntries[index].host.style.zIndex = String(index + 1)
