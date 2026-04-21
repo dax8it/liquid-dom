@@ -1,3 +1,4 @@
+import { GlassPointerEvent, type GlassPointerEventType } from './events'
 import {
   composeTransform,
   getMinimumScale,
@@ -114,6 +115,31 @@ type BackdropMetricsState = {
   cleanupAfterPending: boolean
 }
 
+type GlassInteractionEntry = {
+  glass: Glass
+  container: Container
+  containerOrder: number
+  glassOrder: number
+  transform: Matrix2D
+  inverseTransform: Matrix2D
+  halfWidth: number
+  halfHeight: number
+  cornerRadius: number
+  cornerTransitionSpeed: number
+}
+
+type PointerSnapshot = {
+  nativeEvent: PointerEvent
+  canvasX: number
+  canvasY: number
+}
+
+type PointerState = {
+  hoveredGlass: Glass | null
+  capturedGlass: Glass | null
+  lastSnapshot: PointerSnapshot | null
+}
+
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max)
 }
@@ -171,6 +197,36 @@ function transformPoint(matrix: Matrix2D, x: number, y: number) {
 
 function matrixToCssTransform(matrix: Matrix2D) {
   return `matrix(${matrix.a}, ${matrix.b}, ${matrix.c}, ${matrix.d}, ${matrix.e}, ${matrix.f})`
+}
+
+function squircleLength(x: number, y: number) {
+  return ((x ** 4 + y ** 4) ** 0.25)
+}
+
+function circularLength(x: number, y: number) {
+  return Math.hypot(x, y)
+}
+
+function sdRoundRect(
+  localX: number,
+  localY: number,
+  halfWidth: number,
+  halfHeight: number,
+  radius: number,
+  cornerTransitionSpeed: number,
+) {
+  const cornerLimit = Math.min(halfWidth, halfHeight)
+  const clampedRadius = Math.min(radius, cornerLimit)
+  const blendDistance = Math.max(cornerTransitionSpeed, 0.0001)
+  const circleBlend = clamp((radius - cornerLimit) / blendDistance, 0, 1)
+  const qx = Math.abs(localX) - halfWidth + clampedRadius
+  const qy = Math.abs(localY) - halfHeight + clampedRadius
+  const cornerX = Math.max(qx, 0)
+  const cornerY = Math.max(qy, 0)
+  const cornerDistance =
+    squircleLength(cornerX, cornerY) * (1 - circleBlend) +
+    circularLength(cornerX, cornerY) * circleBlend
+  return cornerDistance + Math.min(Math.max(qx, qy), 0) - clampedRadius
 }
 
 function createEmptyBounds(): BoundsRect {
@@ -368,6 +424,9 @@ export class Renderer {
   private readonly pendingBackdropMetricStates = new Set<BackdropMetricsState>()
   private readonly glassContentEntries = new Map<Glass, GlassContentEntry>()
   private readonly glassContentHosts = new Set<HTMLDivElement>()
+  private glassInteractionEntries = new Map<Glass, GlassInteractionEntry>()
+  private glassInteractionOrder: GlassInteractionEntry[] = []
+  private readonly pointerStates = new Map<number, PointerState>()
 
   private initPromise: Promise<void> | null = null
   private unsubscribeSceneMutations: (() => void) | null = null
@@ -440,6 +499,26 @@ export class Renderer {
     this.queueSceneContentSync()
   }
 
+  private readonly handlePointerMove = (event: PointerEvent) => {
+    this.handleNativePointerEvent('pointermove', event)
+  }
+
+  private readonly handlePointerDown = (event: PointerEvent) => {
+    this.handleNativePointerEvent('pointerdown', event)
+  }
+
+  private readonly handlePointerUp = (event: PointerEvent) => {
+    this.handleNativePointerEvent('pointerup', event)
+  }
+
+  private readonly handlePointerCancel = (event: PointerEvent) => {
+    this.handleNativePointerEvent('pointercancel', event)
+  }
+
+  private readonly handlePointerLeave = (event: PointerEvent) => {
+    this.handleNativePointerEvent('pointerleave', event)
+  }
+
   /**
    * Creates a renderer and begins asynchronous WebGPU initialization immediately.
    */
@@ -459,6 +538,11 @@ export class Renderer {
     this.htmlRoot.style.zIndex = '0'
     this.targetCanvas.append(this.htmlRoot)
     this.targetCanvas.addEventListener('paint', this.handlePaintEvent as EventListener)
+    this.targetCanvas.addEventListener('pointermove', this.handlePointerMove, true)
+    this.targetCanvas.addEventListener('pointerdown', this.handlePointerDown, true)
+    this.targetCanvas.addEventListener('pointerup', this.handlePointerUp, true)
+    this.targetCanvas.addEventListener('pointercancel', this.handlePointerCancel, true)
+    this.targetCanvas.addEventListener('pointerleave', this.handlePointerLeave, true)
     this.unsubscribeSceneMutations = this.scene._subscribe(this.handleSceneMutation)
 
     this.canvas = this.targetCanvas
@@ -526,11 +610,12 @@ export class Renderer {
     }
 
     this.pendingRender = true
+    const containers = this.syncSceneNow()
     if (!this.initialized) {
       return
     }
 
-    this.drawFrame()
+    this.drawFrame(containers)
   }
 
   /**
@@ -544,6 +629,11 @@ export class Renderer {
     this.destroyed = true
     this.pendingRender = false
     this.targetCanvas.removeEventListener('paint', this.handlePaintEvent as EventListener)
+    this.targetCanvas.removeEventListener('pointermove', this.handlePointerMove, true)
+    this.targetCanvas.removeEventListener('pointerdown', this.handlePointerDown, true)
+    this.targetCanvas.removeEventListener('pointerup', this.handlePointerUp, true)
+    this.targetCanvas.removeEventListener('pointercancel', this.handlePointerCancel, true)
+    this.targetCanvas.removeEventListener('pointerleave', this.handlePointerLeave, true)
     this.unsubscribeSceneMutations?.()
     this.unsubscribeSceneMutations = null
     this.resizeObserver?.disconnect()
@@ -586,6 +676,9 @@ export class Renderer {
     }
     this.glassContentEntries.clear()
     this.glassContentHosts.clear()
+    this.glassInteractionEntries.clear()
+    this.glassInteractionOrder = []
+    this.pointerStates.clear()
   }
 
   private async initialize() {
@@ -796,7 +889,7 @@ export class Renderer {
       alphaMode: 'opaque',
     })
 
-    this.syncSceneContentNow()
+    this.syncSceneNow()
   }
 
   private ensureShapesBuffer(requiredCount: number) {
@@ -965,17 +1058,299 @@ export class Renderer {
         return
       }
 
-      this.syncSceneContentNow()
+      this.syncSceneNow()
     })
   }
 
-  private syncSceneContentNow() {
-    if (!this.initialized || !this.device) {
-      return
+  private syncSceneNow() {
+    const containers = this.getSortedContainers()
+
+    this.syncGlassInteractions(containers)
+    if (this.initialized && this.device) {
+      this.syncGlassContent(containers)
     }
 
     this.pendingSceneContentSync = false
-    this.syncGlassContent(this.getSortedContainers())
+    return containers
+  }
+
+  private syncGlassInteractions(containers: ReturnType<typeof flattenContainers>) {
+    const previousEntries = this.glassInteractionEntries
+    const nextEntries = new Map<Glass, GlassInteractionEntry>()
+    const nextOrder: GlassInteractionEntry[] = []
+
+    for (let containerOrder = 0; containerOrder < containers.length; containerOrder += 1) {
+      const entry = containers[containerOrder]
+
+      for (let glassOrder = 0; glassOrder < entry.container._children.length; glassOrder += 1) {
+        const glass = entry.container._children[glassOrder]
+        if (glass.width <= 0 || glass.height <= 0) {
+          continue
+        }
+
+        const transform = multiplyMatrices(entry.transform, composeTransform(glass))
+        const inverseTransform = invertMatrix(transform)
+        if (!inverseTransform) {
+          continue
+        }
+
+        const interactionEntry = {
+          glass,
+          container: entry.container,
+          containerOrder,
+          glassOrder,
+          transform,
+          inverseTransform,
+          halfWidth: glass.width * 0.5,
+          halfHeight: glass.height * 0.5,
+          cornerRadius: glass.cornerRadius,
+          cornerTransitionSpeed: glass.cornerTransitionSpeed,
+        } satisfies GlassInteractionEntry
+
+        nextEntries.set(glass, interactionEntry)
+        nextOrder.push(interactionEntry)
+      }
+    }
+
+    nextOrder.sort(
+      (left, right) =>
+        left.containerOrder - right.containerOrder ||
+        left.glass.zIndex - right.glass.zIndex ||
+        left.glassOrder - right.glassOrder,
+    )
+
+    this.glassInteractionEntries = nextEntries
+    this.glassInteractionOrder = nextOrder
+    this.handleRemovedInteractionTargets(previousEntries)
+  }
+
+  private measureInteractionEntry(entry: GlassInteractionEntry, canvasX: number, canvasY: number) {
+    const localPoint = transformPoint(entry.inverseTransform, canvasX, canvasY)
+    const centeredX = localPoint.x - entry.halfWidth
+    const centeredY = localPoint.y - entry.halfHeight
+    return {
+      localX: localPoint.x,
+      localY: localPoint.y,
+      inside:
+        sdRoundRect(
+          centeredX,
+          centeredY,
+          entry.halfWidth,
+          entry.halfHeight,
+          entry.cornerRadius,
+          entry.cornerTransitionSpeed,
+        ) <= 0,
+    }
+  }
+
+  private hitTestGlassAt(canvasX: number, canvasY: number) {
+    for (let index = this.glassInteractionOrder.length - 1; index >= 0; index -= 1) {
+      const entry = this.glassInteractionOrder[index]
+      if (this.measureInteractionEntry(entry, canvasX, canvasY).inside) {
+        return entry
+      }
+    }
+
+    return null
+  }
+
+  private getPointerState(pointerId: number) {
+    let state = this.pointerStates.get(pointerId)
+    if (state) {
+      return state
+    }
+
+    state = {
+      hoveredGlass: null,
+      capturedGlass: null,
+      lastSnapshot: null,
+    }
+    this.pointerStates.set(pointerId, state)
+    return state
+  }
+
+  private createPointerSnapshot(event: PointerEvent): PointerSnapshot {
+    const bounds = this.targetCanvas.getBoundingClientRect()
+    return {
+      nativeEvent: event,
+      canvasX: event.clientX - bounds.left,
+      canvasY: event.clientY - bounds.top,
+    }
+  }
+
+  private dispatchGlassPointerEvent(
+    type: GlassPointerEventType,
+    glass: Glass,
+    entry: GlassInteractionEntry | null,
+    snapshot: PointerSnapshot,
+    inside: boolean,
+  ) {
+    const localPoint = entry
+      ? this.measureInteractionEntry(entry, snapshot.canvasX, snapshot.canvasY)
+      : { localX: 0, localY: 0 }
+    const event = new GlassPointerEvent(type, {
+      glass,
+      renderer: this,
+      nativeEvent: snapshot.nativeEvent,
+      canvasX: snapshot.canvasX,
+      canvasY: snapshot.canvasY,
+      localX: localPoint.localX,
+      localY: localPoint.localY,
+      inside,
+    })
+
+    glass.dispatchEvent(event)
+    if (event.defaultPrevented) {
+      snapshot.nativeEvent.preventDefault()
+    }
+  }
+
+  private updateHoveredGlass(state: PointerState, nextEntry: GlassInteractionEntry | null, snapshot: PointerSnapshot) {
+    const currentGlass = state.hoveredGlass
+    const nextGlass = nextEntry?.glass ?? null
+    if (currentGlass === nextGlass) {
+      return
+    }
+
+    if (currentGlass) {
+      const currentEntry = this.glassInteractionEntries.get(currentGlass) ?? null
+      this.dispatchGlassPointerEvent('pointerleave', currentGlass, currentEntry, snapshot, false)
+    }
+
+    state.hoveredGlass = nextGlass
+    if (nextEntry) {
+      this.dispatchGlassPointerEvent('pointerenter', nextEntry.glass, nextEntry, snapshot, true)
+    }
+  }
+
+  private releaseNativePointerCapture(pointerId: number) {
+    if (!this.targetCanvas.hasPointerCapture(pointerId)) {
+      return
+    }
+
+    try {
+      this.targetCanvas.releasePointerCapture(pointerId)
+    } catch {
+      // Ignore browsers rejecting a redundant release.
+    }
+  }
+
+  private cleanupPointerState(pointerId: number, state: PointerState) {
+    if (state.hoveredGlass || state.capturedGlass) {
+      return
+    }
+
+    this.pointerStates.delete(pointerId)
+  }
+
+  private handleRemovedInteractionTargets(previousEntries: Map<Glass, GlassInteractionEntry>) {
+    for (const [pointerId, state] of this.pointerStates) {
+      const snapshot = state.lastSnapshot
+      const capturedGlass = state.capturedGlass
+      if (capturedGlass && !this.glassInteractionEntries.has(capturedGlass)) {
+        const previousEntry = previousEntries.get(capturedGlass) ?? null
+        if (snapshot) {
+          this.dispatchGlassPointerEvent('pointercancel', capturedGlass, previousEntry, snapshot, false)
+        }
+        state.capturedGlass = null
+        this.releaseNativePointerCapture(pointerId)
+      }
+
+      const hoveredGlass = state.hoveredGlass
+      if (hoveredGlass && !this.glassInteractionEntries.has(hoveredGlass)) {
+        const previousEntry = previousEntries.get(hoveredGlass) ?? null
+        if (snapshot) {
+          this.dispatchGlassPointerEvent('pointerleave', hoveredGlass, previousEntry, snapshot, false)
+        }
+        state.hoveredGlass = null
+      }
+
+      if (!state.capturedGlass && snapshot) {
+        this.updateHoveredGlass(state, this.hitTestGlassAt(snapshot.canvasX, snapshot.canvasY), snapshot)
+      }
+
+      this.cleanupPointerState(pointerId, state)
+    }
+  }
+
+  private handleNativePointerEvent(type: GlassPointerEventType, event: PointerEvent) {
+    if (this.destroyed) {
+      return
+    }
+
+    if (this.pendingSceneContentSync) {
+      this.syncSceneNow()
+    }
+
+    const state = this.getPointerState(event.pointerId)
+    const snapshot = this.createPointerSnapshot(event)
+    state.lastSnapshot = snapshot
+
+    const capturedEntry = state.capturedGlass
+      ? this.glassInteractionEntries.get(state.capturedGlass) ?? null
+      : null
+
+    if (capturedEntry) {
+      if (type === 'pointerleave') {
+        return
+      }
+
+      const measurement = this.measureInteractionEntry(capturedEntry, snapshot.canvasX, snapshot.canvasY)
+      this.dispatchGlassPointerEvent(type, capturedEntry.glass, capturedEntry, snapshot, measurement.inside)
+
+      if (type === 'pointerup' || type === 'pointercancel') {
+        state.capturedGlass = null
+        this.releaseNativePointerCapture(event.pointerId)
+        this.updateHoveredGlass(state, this.hitTestGlassAt(snapshot.canvasX, snapshot.canvasY), snapshot)
+      }
+
+      if (this.pendingSceneContentSync) {
+        this.syncSceneNow()
+      }
+      this.cleanupPointerState(event.pointerId, state)
+      return
+    }
+
+    if (type === 'pointerleave') {
+      if (state.hoveredGlass) {
+        const hoveredEntry = this.glassInteractionEntries.get(state.hoveredGlass) ?? null
+        this.dispatchGlassPointerEvent('pointerleave', state.hoveredGlass, hoveredEntry, snapshot, false)
+        state.hoveredGlass = null
+      }
+
+      if (this.pendingSceneContentSync) {
+        this.syncSceneNow()
+      }
+      this.cleanupPointerState(event.pointerId, state)
+      return
+    }
+
+    const hitEntry = this.hitTestGlassAt(snapshot.canvasX, snapshot.canvasY)
+    this.updateHoveredGlass(state, hitEntry, snapshot)
+
+    if (hitEntry) {
+      this.dispatchGlassPointerEvent(type, hitEntry.glass, hitEntry, snapshot, true)
+
+      if (type === 'pointerdown') {
+        if (this.pendingSceneContentSync) {
+          this.syncSceneNow()
+        }
+
+        if (this.glassInteractionEntries.has(hitEntry.glass)) {
+          state.capturedGlass = hitEntry.glass
+          try {
+            this.targetCanvas.setPointerCapture(event.pointerId)
+          } catch {
+            state.capturedGlass = null
+          }
+        }
+      }
+    }
+
+    if (this.pendingSceneContentSync) {
+      this.syncSceneNow()
+    }
+    this.cleanupPointerState(event.pointerId, state)
   }
 
   private syncGlassContent(containers: ReturnType<typeof flattenContainers>) {
@@ -1539,7 +1914,7 @@ export class Renderer {
     pass.end()
   }
 
-  private drawFrame() {
+  private drawFrame(containers = this.getSortedContainers()) {
     if (
       this.destroyed ||
       !this.device ||
@@ -1551,9 +1926,6 @@ export class Renderer {
     ) {
       return
     }
-
-    const containers = this.getSortedContainers()
-
     if (!this.backgroundReady || !this.contentReady) {
       return
     }

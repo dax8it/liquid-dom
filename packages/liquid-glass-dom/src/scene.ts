@@ -1,3 +1,4 @@
+import type { GlassPointerEvent, GlassPointerEventType } from './events'
 import { composeTransform, identityMatrix, multiplyMatrices, type Matrix2D } from './matrix'
 import type { Point, RgbaColor, SurfaceProfile, Transform } from './types'
 
@@ -11,6 +12,15 @@ export type GlassInit = Partial<Transform> & {
   cornerTransitionSpeed?: number
   zIndex?: number
   content?: HTMLElement | null
+}
+
+export interface GlassEventMap {
+  pointerenter: GlassPointerEvent
+  pointerleave: GlassPointerEvent
+  pointermove: GlassPointerEvent
+  pointerdown: GlassPointerEvent
+  pointerup: GlassPointerEvent
+  pointercancel: GlassPointerEvent
 }
 
 /**
@@ -146,7 +156,7 @@ function ensureNoCycle(parent: Group, child: Group) {
 /**
  * A single rounded glass shape inside a {@link Container}.
  */
-export class Glass implements Transform {
+export class Glass extends EventTarget implements Transform {
   /** Horizontal translation in CSS pixels. */
   x = 0
   /** Vertical translation in CSS pixels. */
@@ -219,6 +229,7 @@ export class Glass implements Transform {
    * Creates a glass shape descriptor.
    */
   constructor(options: GlassInit = {}) {
+    super()
     applyTransformDefaults(this, options)
 
     if (options.width !== undefined) {
@@ -273,6 +284,42 @@ export class Glass implements Transform {
    */
   clearContent() {
     this.setContent(null)
+  }
+
+  addEventListener<T extends GlassPointerEventType>(
+    type: T,
+    listener: ((event: GlassEventMap[T]) => void) | null,
+    options?: boolean | AddEventListenerOptions,
+  ): void
+  addEventListener(
+    type: string,
+    listener: EventListenerOrEventListenerObject | null,
+    options?: boolean | AddEventListenerOptions,
+  ): void
+  addEventListener(
+    type: string,
+    listener: EventListenerOrEventListenerObject | null,
+    options?: boolean | AddEventListenerOptions,
+  ) {
+    super.addEventListener(type, listener, options)
+  }
+
+  removeEventListener<T extends GlassPointerEventType>(
+    type: T,
+    listener: ((event: GlassEventMap[T]) => void) | null,
+    options?: boolean | EventListenerOptions,
+  ): void
+  removeEventListener(
+    type: string,
+    listener: EventListenerOrEventListenerObject | null,
+    options?: boolean | EventListenerOptions,
+  ): void
+  removeEventListener(
+    type: string,
+    listener: EventListenerOrEventListenerObject | null,
+    options?: boolean | EventListenerOptions,
+  ) {
+    super.removeEventListener(type, listener, options)
   }
 }
 

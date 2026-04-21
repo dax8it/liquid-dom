@@ -1,3 +1,5 @@
+export { GlassPointerEvent } from './events'
 export { Glass, Container, Group, Scene } from './scene'
 export { Renderer } from './renderer'
+export type { GlassPointerEventInit, GlassPointerEventType } from './events'
 export type { BackdropMetrics, Point, RgbaColor, SurfaceProfile, Transform } from './types'

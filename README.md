@@ -23,10 +23,12 @@ pnpm add liquid-glass-dom
 ```ts
 import {
   Glass,
+  GlassPointerEvent,
   Container,
   Group,
   Renderer,
   Scene,
+  type GlassPointerEventType,
   type Point,
   type RgbaColor,
   type SurfaceProfile,
@@ -218,7 +220,8 @@ Behavior notes:
 - `x` and `y` refer to the top-left corner of the local shape bounds
 - `width` and `height` are full dimensions, not half extents
 - `cornerTransitionSpeed` controls the blend from squircle-like corners to circular corners when the radius becomes large relative to the shape size
-- `zIndex` only affects DOM hit testing for glass content, not glass rendering order
+- `zIndex` affects interaction ordering for glass content hosts and per-glass pointer events within the same container layer
+- `zIndex` does not change container render order, and does not let a glass in a lower container layer receive events above a glass in a higher container layer
 
 Methods:
 
@@ -229,6 +232,40 @@ Methods:
   - assigns or replaces the DOM element rendered inside this glass
 - `clearContent(): void`
   - removes the DOM element rendered inside this glass
+- `addEventListener(type, listener): void`
+  - standard `EventTarget` API for glass pointer events
+- `removeEventListener(type, listener): void`
+  - removes a previously registered glass pointer listener
+
+Pointer events:
+
+- supported event names are:
+  - `'pointerenter'`
+  - `'pointerleave'`
+  - `'pointermove'`
+  - `'pointerdown'`
+  - `'pointerup'`
+  - `'pointercancel'`
+- listeners receive a `GlassPointerEvent`
+- `GlassPointerEvent` exposes:
+  - `glass`
+  - `renderer`
+  - `nativeEvent`
+  - `pointerId`
+  - `pointerType`
+  - `isPrimary`
+  - `button`
+  - `buttons`
+  - `clientX`
+  - `clientY`
+  - `canvasX`
+  - `canvasY`
+  - `localX`
+  - `localY`
+  - `inside`
+- per-glass pointer hits are evaluated against each glass's own rounded-rect SDF
+- smooth-union bridge regions between glasses in the same container are not individually hittable
+- hosted DOM content inside a glass can still receive normal browser pointer events, and glass listeners still fire from the renderer's hit testing path
 
 ### `class Container`
 
