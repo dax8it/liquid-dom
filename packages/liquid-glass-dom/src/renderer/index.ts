@@ -1,15 +1,40 @@
-import { GlassPointerEvent, type GlassPointerEventType } from './events'
+import { GlassPointerEvent, type GlassPointerEventType } from '../events'
 import {
   composeTransform,
   getMinimumScale,
   invertMatrix,
   multiplyMatrices,
   scaleOutputMatrix,
+  transformPoint,
   type Matrix2D,
-} from './matrix'
-import { Container, flattenContainers, Glass, Scene } from './scene'
-import { BLUR_SHADER, GLASS_SHADER, METRICS_SHADER, PRESENT_SHADER } from './shaders'
-import type { BackdropMetrics, SurfaceProfile } from './types'
+} from '../matrix'
+import {
+  CONTENT_ATLAS_PADDING,
+  packContentAtlas,
+  type GlassContentEntry,
+} from './content'
+import {
+  createGlassInteractionEntries,
+  hitTestGlassInteractionEntries,
+  matrixToCssTransform,
+  measureGlassInteractionEntry,
+  type GlassInteractionEntry,
+  type PointerSnapshot,
+  type PointerState,
+} from './interaction'
+import {
+  BACKDROP_METRICS_BUFFER_SIZE,
+  BACKDROP_METRICS_BYTES_PER_ROW,
+  BACKDROP_METRICS_SIZE,
+  createEmptyBounds,
+  expandBounds,
+  hasBounds,
+  parseBackdropMetrics,
+  type BoundsRect,
+} from './metrics'
+import { Container, flattenContainers, Glass, Scene } from '../scene'
+import { BLUR_SHADER, GLASS_SHADER, METRICS_SHADER, PRESENT_SHADER } from '../shaders'
+import type { BackdropMetrics, SurfaceProfile } from '../types'
 
 const GPU_BUFFER_USAGE = {
   MAP_READ: 0x0001,
@@ -24,11 +49,6 @@ const GPU_TEXTURE_USAGE = {
   COPY_DST: 0x02,
   RENDER_ATTACHMENT: 0x10,
 } as const
-
-const BACKDROP_METRICS_SIZE = 32
-const BACKDROP_METRICS_BYTES_PER_ROW = 256
-const BACKDROP_METRICS_BUFFER_SIZE = BACKDROP_METRICS_BYTES_PER_ROW * BACKDROP_METRICS_SIZE
-const CONTENT_ATLAS_PADDING = 1
 
 type HTMLCanvasElementWithSubtree = HTMLCanvasElement
 
@@ -63,47 +83,9 @@ type RenderTargetSet = {
   sceneB: GPUTexture
 }
 
-type BoundsRect = {
-  minX: number
-  minY: number
-  maxX: number
-  maxY: number
-}
-
 type PackedShapesResult = {
   shapeCount: number
   bounds: BoundsRect | null
-}
-
-type GlassContentEntry = {
-  glass: Glass
-  host: HTMLDivElement
-  contentVersion: number
-  width: number
-  height: number
-  deviceWidth: number
-  deviceHeight: number
-  atlasX: number
-  atlasY: number
-  atlasWidth: number
-  atlasHeight: number
-  contentU: number
-  contentV: number
-  contentScaleU: number
-  contentScaleV: number
-}
-
-type ContentLayoutRect = {
-  x: number
-  y: number
-  width: number
-  height: number
-}
-
-type ContentAtlasLayout = {
-  width: number
-  height: number
-  rects: Map<Glass, ContentLayoutRect>
 }
 
 type BackdropMetricsState = {
@@ -113,36 +95,6 @@ type BackdropMetricsState = {
   pendingReadback: boolean
   inScene: boolean
   cleanupAfterPending: boolean
-}
-
-type GlassInteractionEntry = {
-  glass: Glass
-  container: Container
-  containerOrder: number
-  glassOrder: number
-  transform: Matrix2D
-  inverseTransform: Matrix2D
-  halfWidth: number
-  halfHeight: number
-  cornerRadius: number
-  cornerTransitionSpeed: number
-}
-
-type PointerSnapshot = {
-  nativeEvent: PointerEvent
-  canvasX: number
-  canvasY: number
-}
-
-type PointerState = {
-  hoveredGlass: Glass | null
-  capturedGlass: Glass | null
-  pressedGlass: Glass | null
-  lastSnapshot: PointerSnapshot | null
-}
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), max)
 }
 
 function createRenderTarget(
@@ -189,215 +141,6 @@ function getSurfaceProfileIndex(profile: SurfaceProfile) {
   return 2
 }
 
-function transformPoint(matrix: Matrix2D, x: number, y: number) {
-  return {
-    x: matrix.a * x + matrix.c * y + matrix.e,
-    y: matrix.b * x + matrix.d * y + matrix.f,
-  }
-}
-
-function matrixToCssTransform(matrix: Matrix2D) {
-  return `matrix(${matrix.a}, ${matrix.b}, ${matrix.c}, ${matrix.d}, ${matrix.e}, ${matrix.f})`
-}
-
-function squircleLength(x: number, y: number) {
-  return ((x ** 4 + y ** 4) ** 0.25)
-}
-
-function circularLength(x: number, y: number) {
-  return Math.hypot(x, y)
-}
-
-function sdRoundRect(
-  localX: number,
-  localY: number,
-  halfWidth: number,
-  halfHeight: number,
-  radius: number,
-  cornerTransitionSpeed: number,
-) {
-  const cornerLimit = Math.min(halfWidth, halfHeight)
-  const clampedRadius = Math.min(radius, cornerLimit)
-  const blendDistance = Math.max(cornerTransitionSpeed, 0.0001)
-  const circleBlend = clamp((radius - cornerLimit) / blendDistance, 0, 1)
-  const qx = Math.abs(localX) - halfWidth + clampedRadius
-  const qy = Math.abs(localY) - halfHeight + clampedRadius
-  const cornerX = Math.max(qx, 0)
-  const cornerY = Math.max(qy, 0)
-  const cornerDistance =
-    squircleLength(cornerX, cornerY) * (1 - circleBlend) +
-    circularLength(cornerX, cornerY) * circleBlend
-  return cornerDistance + Math.min(Math.max(qx, qy), 0) - clampedRadius
-}
-
-function createEmptyBounds(): BoundsRect {
-  return {
-    minX: Number.POSITIVE_INFINITY,
-    minY: Number.POSITIVE_INFINITY,
-    maxX: Number.NEGATIVE_INFINITY,
-    maxY: Number.NEGATIVE_INFINITY,
-  }
-}
-
-function expandBounds(bounds: BoundsRect, x: number, y: number) {
-  bounds.minX = Math.min(bounds.minX, x)
-  bounds.minY = Math.min(bounds.minY, y)
-  bounds.maxX = Math.max(bounds.maxX, x)
-  bounds.maxY = Math.max(bounds.maxY, y)
-}
-
-function hasBounds(bounds: BoundsRect) {
-  return (
-    Number.isFinite(bounds.minX) &&
-    Number.isFinite(bounds.minY) &&
-    Number.isFinite(bounds.maxX) &&
-    Number.isFinite(bounds.maxY) &&
-    bounds.maxX > bounds.minX &&
-    bounds.maxY > bounds.minY
-  )
-}
-
-function srgbToLinear(channel: number) {
-  if (channel <= 0.04045) {
-    return channel / 12.92
-  }
-
-  return ((channel + 0.055) / 1.055) ** 2.4
-}
-
-function percentile(values: number[], p: number) {
-  if (values.length === 0) {
-    return 0
-  }
-
-  if (values.length === 1) {
-    return values[0]
-  }
-
-  const index = clamp((values.length - 1) * p, 0, values.length - 1)
-  const lower = Math.floor(index)
-  const upper = Math.ceil(index)
-  const blend = index - lower
-  return values[lower] + (values[upper] - values[lower]) * blend
-}
-
-function nextPowerOfTwo(value: number) {
-  let next = 1
-  while (next < value) {
-    next *= 2
-  }
-  return next
-}
-
-function tryPackContentAtlas(entries: GlassContentEntry[], atlasWidth: number) {
-  const rects = new Map<Glass, ContentLayoutRect>()
-  let cursorX = 0
-  let cursorY = 0
-  let rowHeight = 0
-
-  for (const entry of entries) {
-    const rectWidth = entry.deviceWidth + CONTENT_ATLAS_PADDING * 2
-    const rectHeight = entry.deviceHeight + CONTENT_ATLAS_PADDING * 2
-
-    if (rectWidth > atlasWidth) {
-      return null
-    }
-
-    if (cursorX > 0 && cursorX + rectWidth > atlasWidth) {
-      cursorX = 0
-      cursorY += rowHeight
-      rowHeight = 0
-    }
-
-    rects.set(entry.glass, {
-      x: cursorX,
-      y: cursorY,
-      width: rectWidth,
-      height: rectHeight,
-    })
-
-    cursorX += rectWidth
-    rowHeight = Math.max(rowHeight, rectHeight)
-  }
-
-  return {
-    width: atlasWidth,
-    height: cursorY + rowHeight,
-    rects,
-  }
-}
-
-function packContentAtlas(entries: GlassContentEntry[], maxTextureSize: number): ContentAtlasLayout {
-  if (entries.length === 0) {
-    throw new Error('Cannot build a glass content atlas without any content entries.')
-  }
-
-  let maxEntryWidth = 1
-  for (const entry of entries) {
-    maxEntryWidth = Math.max(maxEntryWidth, entry.deviceWidth + CONTENT_ATLAS_PADDING * 2)
-  }
-
-  let atlasWidth = nextPowerOfTwo(maxEntryWidth)
-  while (atlasWidth <= maxTextureSize) {
-    const layout = tryPackContentAtlas(entries, atlasWidth)
-    if (layout && layout.height <= maxTextureSize) {
-      return layout
-    }
-
-    atlasWidth *= 2
-  }
-
-  throw new Error('Glass content atlas exceeds the maximum supported texture size.')
-}
-
-function parseBackdropMetrics(buffer: GPUBuffer): BackdropMetrics | null {
-  const bytes = new Uint8Array(buffer.getMappedRange())
-  const luminances: number[] = []
-  let red = 0
-  let green = 0
-  let blue = 0
-
-  for (let y = 0; y < BACKDROP_METRICS_SIZE; y += 1) {
-    const rowOffset = y * BACKDROP_METRICS_BYTES_PER_ROW
-
-    for (let x = 0; x < BACKDROP_METRICS_SIZE; x += 1) {
-      const offset = rowOffset + x * 4
-      const alpha = bytes[offset + 3] / 255
-      if (alpha <= 0.5) {
-        continue
-      }
-
-      const linearRed = bytes[offset] / 255
-      const linearGreen = bytes[offset + 1] / 255
-      const linearBlue = bytes[offset + 2] / 255
-      const luminance = linearRed * 0.2126 + linearGreen * 0.7152 + linearBlue * 0.0722
-
-      red += linearRed
-      green += linearGreen
-      blue += linearBlue
-      luminances.push(luminance)
-    }
-  }
-
-  if (luminances.length === 0) {
-    return null
-  }
-
-  luminances.sort((left, right) => left - right)
-
-  const count = luminances.length
-  return {
-    averageLinearColor: {
-      r: red / count,
-      g: green / count,
-      b: blue / count,
-    },
-    averageLuminance: luminances.reduce((sum, value) => sum + value, 0) / count,
-    luminanceP10: percentile(luminances, 0.1),
-    luminanceP50: percentile(luminances, 0.5),
-    luminanceP90: percentile(luminances, 0.9),
-  }
-}
 
 /**
  * Imperative WebGPU renderer for a liquid-glass scene graph.
@@ -1077,82 +820,10 @@ export class Renderer {
 
   private syncGlassInteractions(containers: ReturnType<typeof flattenContainers>) {
     const previousEntries = this.glassInteractionEntries
-    const nextEntries = new Map<Glass, GlassInteractionEntry>()
-    const nextOrder: GlassInteractionEntry[] = []
-
-    for (let containerOrder = 0; containerOrder < containers.length; containerOrder += 1) {
-      const entry = containers[containerOrder]
-
-      for (let glassOrder = 0; glassOrder < entry.container._children.length; glassOrder += 1) {
-        const glass = entry.container._children[glassOrder]
-        if (!glass.pointerEvents || glass.width <= 0 || glass.height <= 0) {
-          continue
-        }
-
-        const transform = multiplyMatrices(entry.transform, composeTransform(glass))
-        const inverseTransform = invertMatrix(transform)
-        if (!inverseTransform) {
-          continue
-        }
-
-        const interactionEntry = {
-          glass,
-          container: entry.container,
-          containerOrder,
-          glassOrder,
-          transform,
-          inverseTransform,
-          halfWidth: glass.width * 0.5,
-          halfHeight: glass.height * 0.5,
-          cornerRadius: glass.cornerRadius,
-          cornerTransitionSpeed: glass.cornerTransitionSpeed,
-        } satisfies GlassInteractionEntry
-
-        nextEntries.set(glass, interactionEntry)
-        nextOrder.push(interactionEntry)
-      }
-    }
-
-    nextOrder.sort(
-      (left, right) =>
-        left.containerOrder - right.containerOrder ||
-        left.glass.zIndex - right.glass.zIndex ||
-        left.glassOrder - right.glassOrder,
-    )
-
-    this.glassInteractionEntries = nextEntries
-    this.glassInteractionOrder = nextOrder
+    const { entriesByGlass, orderedEntries } = createGlassInteractionEntries(containers)
+    this.glassInteractionEntries = entriesByGlass
+    this.glassInteractionOrder = orderedEntries
     this.handleRemovedInteractionTargets(previousEntries)
-  }
-
-  private measureInteractionEntry(entry: GlassInteractionEntry, canvasX: number, canvasY: number) {
-    const localPoint = transformPoint(entry.inverseTransform, canvasX, canvasY)
-    const centeredX = localPoint.x - entry.halfWidth
-    const centeredY = localPoint.y - entry.halfHeight
-    return {
-      localX: localPoint.x,
-      localY: localPoint.y,
-      inside:
-        sdRoundRect(
-          centeredX,
-          centeredY,
-          entry.halfWidth,
-          entry.halfHeight,
-          entry.cornerRadius,
-          entry.cornerTransitionSpeed,
-        ) <= 0,
-    }
-  }
-
-  private hitTestGlassAt(canvasX: number, canvasY: number) {
-    for (let index = this.glassInteractionOrder.length - 1; index >= 0; index -= 1) {
-      const entry = this.glassInteractionOrder[index]
-      if (this.measureInteractionEntry(entry, canvasX, canvasY).inside) {
-        return entry
-      }
-    }
-
-    return null
   }
 
   private getPointerState(pointerId: number) {
@@ -1188,7 +859,7 @@ export class Renderer {
     inside: boolean,
   ) {
     const localPoint = entry
-      ? this.measureInteractionEntry(entry, snapshot.canvasX, snapshot.canvasY)
+      ? measureGlassInteractionEntry(entry, snapshot.canvasX, snapshot.canvasY)
       : { localX: 0, localY: 0 }
     const event = new GlassPointerEvent(type, {
       glass,
@@ -1269,7 +940,11 @@ export class Renderer {
       }
 
       if (!state.capturedGlass && snapshot) {
-        this.updateHoveredGlass(state, this.hitTestGlassAt(snapshot.canvasX, snapshot.canvasY), snapshot)
+        this.updateHoveredGlass(
+          state,
+          hitTestGlassInteractionEntries(this.glassInteractionOrder, snapshot.canvasX, snapshot.canvasY),
+          snapshot,
+        )
       }
 
       this.cleanupPointerState(pointerId, state)
@@ -1298,7 +973,7 @@ export class Renderer {
         return
       }
 
-      const measurement = this.measureInteractionEntry(capturedEntry, snapshot.canvasX, snapshot.canvasY)
+      const measurement = measureGlassInteractionEntry(capturedEntry, snapshot.canvasX, snapshot.canvasY)
       this.dispatchGlassPointerEvent(type, capturedEntry.glass, capturedEntry, snapshot, measurement.inside)
 
       if (type === 'pointerup' || type === 'pointercancel') {
@@ -1314,7 +989,11 @@ export class Renderer {
         state.capturedGlass = null
         state.pressedGlass = null
         this.releaseNativePointerCapture(event.pointerId)
-        this.updateHoveredGlass(state, this.hitTestGlassAt(snapshot.canvasX, snapshot.canvasY), snapshot)
+        this.updateHoveredGlass(
+          state,
+          hitTestGlassInteractionEntries(this.glassInteractionOrder, snapshot.canvasX, snapshot.canvasY),
+          snapshot,
+        )
       }
 
       if (this.pendingSceneContentSync) {
@@ -1338,7 +1017,11 @@ export class Renderer {
       return
     }
 
-    const hitEntry = this.hitTestGlassAt(snapshot.canvasX, snapshot.canvasY)
+    const hitEntry = hitTestGlassInteractionEntries(
+      this.glassInteractionOrder,
+      snapshot.canvasX,
+      snapshot.canvasY,
+    )
     this.updateHoveredGlass(state, hitEntry, snapshot)
 
     if (hitEntry) {

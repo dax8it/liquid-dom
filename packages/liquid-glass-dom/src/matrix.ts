@@ -116,6 +116,13 @@ export function scaleOutputMatrix(matrix: Matrix2D, factor: number): Matrix2D {
   }
 }
 
+export function transformPoint(matrix: Matrix2D, x: number, y: number) {
+  return {
+    x: matrix.a * x + matrix.c * y + matrix.e,
+    y: matrix.b * x + matrix.d * y + matrix.f,
+  }
+}
+
 export function getMinimumScale(matrix: Matrix2D): number {
   const scaleX = Math.hypot(matrix.a, matrix.b)
   const scaleY = Math.hypot(matrix.c, matrix.d)

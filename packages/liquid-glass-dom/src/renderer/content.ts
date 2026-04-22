@@ -1,0 +1,103 @@
+import type { Glass } from '../scene'
+
+export const CONTENT_ATLAS_PADDING = 1
+
+export type GlassContentEntry = {
+  glass: Glass
+  host: HTMLDivElement
+  contentVersion: number
+  width: number
+  height: number
+  deviceWidth: number
+  deviceHeight: number
+  atlasX: number
+  atlasY: number
+  atlasWidth: number
+  atlasHeight: number
+  contentU: number
+  contentV: number
+  contentScaleU: number
+  contentScaleV: number
+}
+
+type ContentLayoutRect = {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export type ContentAtlasLayout = {
+  width: number
+  height: number
+  rects: Map<Glass, ContentLayoutRect>
+}
+
+function nextPowerOfTwo(value: number) {
+  let next = 1
+  while (next < value) {
+    next *= 2
+  }
+  return next
+}
+
+function tryPackContentAtlas(entries: GlassContentEntry[], atlasWidth: number) {
+  const rects = new Map<Glass, ContentLayoutRect>()
+  let cursorX = 0
+  let cursorY = 0
+  let rowHeight = 0
+
+  for (const entry of entries) {
+    const rectWidth = entry.deviceWidth + CONTENT_ATLAS_PADDING * 2
+    const rectHeight = entry.deviceHeight + CONTENT_ATLAS_PADDING * 2
+
+    if (rectWidth > atlasWidth) {
+      return null
+    }
+
+    if (cursorX > 0 && cursorX + rectWidth > atlasWidth) {
+      cursorX = 0
+      cursorY += rowHeight
+      rowHeight = 0
+    }
+
+    rects.set(entry.glass, {
+      x: cursorX,
+      y: cursorY,
+      width: rectWidth,
+      height: rectHeight,
+    })
+
+    cursorX += rectWidth
+    rowHeight = Math.max(rowHeight, rectHeight)
+  }
+
+  return {
+    width: atlasWidth,
+    height: cursorY + rowHeight,
+    rects,
+  }
+}
+
+export function packContentAtlas(entries: GlassContentEntry[], maxTextureSize: number): ContentAtlasLayout {
+  if (entries.length === 0) {
+    throw new Error('Cannot build a glass content atlas without any content entries.')
+  }
+
+  let maxEntryWidth = 1
+  for (const entry of entries) {
+    maxEntryWidth = Math.max(maxEntryWidth, entry.deviceWidth + CONTENT_ATLAS_PADDING * 2)
+  }
+
+  let atlasWidth = nextPowerOfTwo(maxEntryWidth)
+  while (atlasWidth <= maxTextureSize) {
+    const layout = tryPackContentAtlas(entries, atlasWidth)
+    if (layout && layout.height <= maxTextureSize) {
+      return layout
+    }
+
+    atlasWidth *= 2
+  }
+
+  throw new Error('Glass content atlas exceeds the maximum supported texture size.')
+}

@@ -1,0 +1,155 @@
+import { composeTransform, invertMatrix, multiplyMatrices, transformPoint, type Matrix2D } from '../matrix'
+import { type Container, type Glass } from '../scene'
+
+type FlattenedContainer = {
+  container: Container
+  transform: Matrix2D
+}
+
+export type GlassInteractionEntry = {
+  glass: Glass
+  container: Container
+  containerOrder: number
+  glassOrder: number
+  transform: Matrix2D
+  inverseTransform: Matrix2D
+  halfWidth: number
+  halfHeight: number
+  cornerRadius: number
+  cornerTransitionSpeed: number
+}
+
+export type PointerSnapshot = {
+  nativeEvent: PointerEvent
+  canvasX: number
+  canvasY: number
+}
+
+export type PointerState = {
+  hoveredGlass: Glass | null
+  capturedGlass: Glass | null
+  pressedGlass: Glass | null
+  lastSnapshot: PointerSnapshot | null
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max)
+}
+
+function squircleLength(x: number, y: number) {
+  return (x ** 4 + y ** 4) ** 0.25
+}
+
+function circularLength(x: number, y: number) {
+  return Math.hypot(x, y)
+}
+
+function sdRoundRect(
+  localX: number,
+  localY: number,
+  halfWidth: number,
+  halfHeight: number,
+  radius: number,
+  cornerTransitionSpeed: number,
+) {
+  const cornerLimit = Math.min(halfWidth, halfHeight)
+  const clampedRadius = Math.min(radius, cornerLimit)
+  const blendDistance = Math.max(cornerTransitionSpeed, 0.0001)
+  const circleBlend = clamp((radius - cornerLimit) / blendDistance, 0, 1)
+  const qx = Math.abs(localX) - halfWidth + clampedRadius
+  const qy = Math.abs(localY) - halfHeight + clampedRadius
+  const cornerX = Math.max(qx, 0)
+  const cornerY = Math.max(qy, 0)
+  const cornerDistance =
+    squircleLength(cornerX, cornerY) * (1 - circleBlend) +
+    circularLength(cornerX, cornerY) * circleBlend
+  return cornerDistance + Math.min(Math.max(qx, qy), 0) - clampedRadius
+}
+
+export function matrixToCssTransform(matrix: Matrix2D) {
+  return `matrix(${matrix.a}, ${matrix.b}, ${matrix.c}, ${matrix.d}, ${matrix.e}, ${matrix.f})`
+}
+
+export function createGlassInteractionEntries(containers: FlattenedContainer[]) {
+  const entriesByGlass = new Map<Glass, GlassInteractionEntry>()
+  const orderedEntries: GlassInteractionEntry[] = []
+
+  for (let containerOrder = 0; containerOrder < containers.length; containerOrder += 1) {
+    const entry = containers[containerOrder]
+
+    for (let glassOrder = 0; glassOrder < entry.container._children.length; glassOrder += 1) {
+      const glass = entry.container._children[glassOrder]
+      if (!glass.pointerEvents || glass.width <= 0 || glass.height <= 0) {
+        continue
+      }
+
+      const transform = multiplyMatrices(entry.transform, composeTransform(glass))
+      const inverseTransform = invertMatrix(transform)
+      if (!inverseTransform) {
+        continue
+      }
+
+      const interactionEntry = {
+        glass,
+        container: entry.container,
+        containerOrder,
+        glassOrder,
+        transform,
+        inverseTransform,
+        halfWidth: glass.width * 0.5,
+        halfHeight: glass.height * 0.5,
+        cornerRadius: glass.cornerRadius,
+        cornerTransitionSpeed: glass.cornerTransitionSpeed,
+      } satisfies GlassInteractionEntry
+
+      entriesByGlass.set(glass, interactionEntry)
+      orderedEntries.push(interactionEntry)
+    }
+  }
+
+  orderedEntries.sort(
+    (left, right) =>
+      left.containerOrder - right.containerOrder ||
+      left.glass.zIndex - right.glass.zIndex ||
+      left.glassOrder - right.glassOrder,
+  )
+
+  return {
+    entriesByGlass,
+    orderedEntries,
+  }
+}
+
+export function measureGlassInteractionEntry(entry: GlassInteractionEntry, canvasX: number, canvasY: number) {
+  const localPoint = transformPoint(entry.inverseTransform, canvasX, canvasY)
+  const centeredX = localPoint.x - entry.halfWidth
+  const centeredY = localPoint.y - entry.halfHeight
+  return {
+    localX: localPoint.x,
+    localY: localPoint.y,
+    inside:
+      sdRoundRect(
+        centeredX,
+        centeredY,
+        entry.halfWidth,
+        entry.halfHeight,
+        entry.cornerRadius,
+        entry.cornerTransitionSpeed,
+      ) <= 0,
+  }
+}
+
+export function hitTestGlassInteractionEntries(
+  entries: GlassInteractionEntry[],
+  canvasX: number,
+  canvasY: number,
+) {
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index]
+    if (measureGlassInteractionEntry(entry, canvasX, canvasY).inside) {
+      return entry
+    }
+  }
+
+  return null
+}
