@@ -60,7 +60,7 @@ function EditorDocumentBackdrop() {
       <section className="editor-backdrop__grid">
         <article className="editor-backdrop__card editor-backdrop__card--warm">
           <span>Hierarchy</span>
-          <strong>Group transforms cascade to all descendants.</strong>
+          <strong>Scene layers render in explicit z-index order.</strong>
         </article>
         <article className="editor-backdrop__card editor-backdrop__card--cool">
           <span>Layering</span>

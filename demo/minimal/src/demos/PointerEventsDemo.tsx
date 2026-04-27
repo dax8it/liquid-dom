@@ -2,6 +2,7 @@ import { startTransition, useEffect, useRef, useState } from 'react'
 import {
   Container,
   Glass,
+  Html,
   type GlassPointerEvent,
   Renderer,
   Scene,
@@ -20,6 +21,29 @@ export default function PointerEventsDemo() {
     }
 
     const scene = new Scene()
+    const backdropElement = document.createElement('div')
+    backdropElement.className = 'backdrop-grid'
+    backdropElement.innerHTML = `
+      <section class="backdrop-card">
+        <span class="eyebrow">minimal demo</span>
+        <h1>Glass Pointer Events</h1>
+        <p>Move through the overlapping shapes to verify per-glass hit testing and container-layer precedence.</p>
+      </section>
+      <section class="backdrop-card alt">
+        <p>Expected checks:</p>
+        <ul>
+          <li>Same-container overlap resolves via glass z-index.</li>
+          <li>Higher container layers win across containers.</li>
+          <li>The left glass has pointer events disabled and should stay inert.</li>
+          <li>Glass events still fire over DOM content hosted inside a glass.</li>
+        </ul>
+      </section>
+    `
+    const backdrop = new Html({
+      zIndex: 0,
+      element: backdropElement,
+    })
+    scene.add(backdrop)
 
     const baseContainer = new Container({
       x: 72,
@@ -83,24 +107,14 @@ export default function PointerEventsDemo() {
     renderer.canvas.className = 'demo-canvas'
     mount.append(renderer.canvas)
 
-    renderer.htmlRoot.innerHTML = `
-      <div class="backdrop-grid">
-        <section class="backdrop-card">
-          <span class="eyebrow">minimal demo</span>
-          <h1>Glass Pointer Events</h1>
-          <p>Move through the overlapping shapes to verify per-glass hit testing and container-layer precedence.</p>
-        </section>
-        <section class="backdrop-card alt">
-          <p>Expected checks:</p>
-          <ul>
-            <li>Same-container overlap resolves via glass z-index.</li>
-            <li>Higher container layers win across containers.</li>
-            <li>The left glass has pointer events disabled and should stay inert.</li>
-            <li>Glass events still fire over DOM content hosted inside a glass.</li>
-          </ul>
-        </section>
-      </div>
-    `
+    const syncBackdropSize = () => {
+      const bounds = mount.getBoundingClientRect()
+      backdrop.width = bounds.width
+      backdrop.height = bounds.height
+    }
+    const resizeObserver = new ResizeObserver(syncBackdropSize)
+    resizeObserver.observe(mount)
+    syncBackdropSize()
 
     const glassButton = document.createElement('button')
     glassButton.className = 'glass-button'
@@ -114,7 +128,14 @@ export default function PointerEventsDemo() {
         ].slice(0, MAX_LOG_ROWS))
       })
     })
-    topGlass.setContent(glassButton)
+    topGlass.add(new Html({
+      x: 0,
+      y: 0,
+      width: topGlass.width,
+      height: topGlass.height,
+      zIndex: 0,
+      element: glassButton,
+    }))
 
     let nextLogId = 1
     const trackedGlasses = [
@@ -167,6 +188,7 @@ export default function PointerEventsDemo() {
 
     return () => {
       cancelAnimationFrame(frameId)
+      resizeObserver.disconnect()
       for (const removeListener of removeListeners) {
         removeListener()
       }

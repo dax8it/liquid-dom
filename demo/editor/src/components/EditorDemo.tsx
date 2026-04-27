@@ -5,7 +5,7 @@ import {
   type BackdropMetrics,
   Container,
   Glass,
-  Group,
+  Html,
   Renderer,
   Scene,
   type Point,
@@ -98,13 +98,8 @@ type ContainerNode = BaseNode & {
   children: GlassNode[]
 }
 
-type GroupNode = BaseNode & {
-  type: 'group'
-  children: Array<GroupNode | ContainerNode>
-}
-
-type RootNode = GroupNode | ContainerNode
-type EditorNode = GroupNode | ContainerNode | GlassNode
+type RootNode = ContainerNode
+type EditorNode = ContainerNode | GlassNode
 
 type SceneState = {
   children: RootNode[]
@@ -123,7 +118,7 @@ type RuntimeContainerEntry = {
 }
 
 type RuntimeBuildResult = {
-  node: Group | Container
+  nodes: Container[]
   containers: RuntimeContainerEntry[]
 }
 
@@ -167,7 +162,6 @@ const SURFACE_PROFILES: Array<{ value: SurfaceProfile; label: string }> = [
 ]
 
 const nodeCounts = {
-  group: 1,
   container: 1,
   glass: 1,
 }
@@ -237,74 +231,54 @@ function createContainerNode(overrides: Partial<ContainerNode> = {}): ContainerN
   }
 }
 
-function createGroupNode(overrides: Partial<GroupNode> = {}): GroupNode {
-  return {
-    id: overrides.id ?? nextId('group'),
-    name: overrides.name ?? nextName('group'),
-    type: 'group',
-    children: overrides.children ?? [],
-    ...createTransformState(overrides),
-  }
-}
-
 function createDefaultSceneState(): SceneState {
   return {
     children: [
-      createGroupNode({
-        name: 'Hero cluster',
+      createContainerNode({
+        name: 'Primary container',
         x: 120,
         y: 88,
+        zIndex: 1,
+        tint: { r: 0.18, g: 0.18, b: 0.18, a: 0.7 },
+        blur: 4,
+        lightDirection: -Math.PI / 4,
         children: [
-          createContainerNode({
-            name: 'Primary container',
-            zIndex: 1,
-            tint: { r: 0.18, g: 0.18, b: 0.18, a: 0.7 },
-            blur: 4,
-            lightDirection: -Math.PI / 4,
-            children: [
-              createGlassNode({
-                name: 'Header slab',
-                x: 40,
-                y: 34,
-                width: 520,
-                height: 88,
-                cornerRadius: 320,
-              }),
-              createGlassNode({
-                name: 'Capsule orb',
-                x: 14,
-                y: 28,
-                width: 84,
-                height: 84,
-                cornerRadius: 220,
-              }),
-            ],
+          createGlassNode({
+            name: 'Header slab',
+            x: 40,
+            y: 34,
+            width: 520,
+            height: 88,
+            cornerRadius: 320,
           }),
-          createGroupNode({
-            name: 'Offset subgroup',
-            x: 420,
-            y: 300,
-            rotation: 0.08,
-            children: [
-              createContainerNode({
-                name: 'Accent container',
-                zIndex: 3,
-                spacing: 22,
-                blur: 6,
-                tint: { r: 0.24, g: 0.24, b: 0.24, a: 0.7 },
-                specularStrength: 2.2,
-                children: [
-                  createGlassNode({
-                    name: 'Bridge',
-                    x: 0,
-                    y: 0,
-                    width: 340,
-                    height: 124,
-                    cornerRadius: 78,
-                  }),
-                ],
-              }),
-            ],
+          createGlassNode({
+            name: 'Capsule orb',
+            x: 14,
+            y: 28,
+            width: 84,
+            height: 84,
+            cornerRadius: 220,
+          }),
+        ],
+      }),
+      createContainerNode({
+        name: 'Accent container',
+        x: 540,
+        y: 388,
+        rotation: 0.08,
+        zIndex: 3,
+        spacing: 22,
+        blur: 6,
+        tint: { r: 0.24, g: 0.24, b: 0.24, a: 0.7 },
+        specularStrength: 2.2,
+        children: [
+          createGlassNode({
+            name: 'Bridge',
+            x: 0,
+            y: 0,
+            width: 340,
+            height: 124,
+            cornerRadius: 78,
           }),
         ],
       }),
@@ -342,13 +316,6 @@ function findNodeLocation(children: Array<RootNode | GlassNode>, id: string, par
       }
     }
 
-    if (child.type === 'group') {
-      const nested = findNodeLocation(child.children, id, child.id)
-      if (nested.node) {
-        return nested
-      }
-    }
-
     if (child.type === 'container') {
       const nested = findNodeLocation(child.children, id, child.id)
       if (nested.node) {
@@ -373,13 +340,6 @@ function updateNodeInList(
       return update(child)
     }
 
-    if (child.type === 'group') {
-      return {
-        ...child,
-        children: updateNodeInList(child.children, id, update) as Array<GroupNode | ContainerNode>,
-      }
-    }
-
     if (child.type === 'container') {
       return {
         ...child,
@@ -395,13 +355,6 @@ function removeNodeFromList(children: Array<RootNode | GlassNode>, id: string): 
   return children
     .filter((child) => child.id !== id)
     .map((child) => {
-      if (child.type === 'group') {
-        return {
-          ...child,
-          children: removeNodeFromList(child.children, id) as Array<GroupNode | ContainerNode>,
-        }
-      }
-
       if (child.type === 'container') {
         return {
           ...child,
@@ -416,29 +369,15 @@ function removeNodeFromList(children: Array<RootNode | GlassNode>, id: string): 
 function insertNode(
   children: Array<RootNode | GlassNode>,
   parentId: string,
-  childToInsert: EditorNode,
+  childToInsert: GlassNode,
 ): Array<RootNode | GlassNode> {
   return children.map((child) => {
     if (child.id === parentId) {
-      if (child.type === 'group' && childToInsert.type !== 'glass') {
+      if (child.type === 'container') {
         return {
           ...child,
           children: [...child.children, childToInsert],
         }
-      }
-
-      if (child.type === 'container' && childToInsert.type === 'glass') {
-        return {
-          ...child,
-          children: [...child.children, childToInsert],
-        }
-      }
-    }
-
-    if (child.type === 'group') {
-      return {
-        ...child,
-        children: insertNode(child.children, parentId, childToInsert) as Array<GroupNode | ContainerNode>,
       }
     }
 
@@ -447,30 +386,6 @@ function insertNode(
 }
 
 function buildRuntimeNode(node: RootNode): RuntimeBuildResult {
-  if (node.type === 'group') {
-    const group = new Group({
-      x: node.x,
-      y: node.y,
-      scaleX: node.scaleX,
-      scaleY: node.scaleY,
-      rotation: node.rotation,
-      origin: node.origin,
-    })
-
-    const containers: RuntimeContainerEntry[] = []
-
-    for (const child of node.children) {
-      const result = buildRuntimeNode(child)
-      group.add(result.node)
-      containers.push(...result.containers)
-    }
-
-    return {
-      node: group,
-      containers,
-    }
-  }
-
   const container = new Container({
     x: node.x,
     y: node.y,
@@ -504,26 +419,29 @@ function buildRuntimeNode(node: RootNode): RuntimeBuildResult {
   for (const child of node.children) {
     const content = createDemoGlassContent(child)
     contentBindings.push(content.binding)
-    container.add(
-      new Glass({
-        x: child.x,
-        y: child.y,
-        scaleX: child.scaleX,
-        scaleY: child.scaleY,
-        rotation: child.rotation,
-        origin: child.origin,
-        width: child.width,
-        height: child.height,
-        zIndex: child.zIndex,
-        cornerRadius: child.cornerRadius,
-        cornerTransitionSpeed: child.cornerTransitionSpeed,
-        content: content.element,
-      }),
-    )
+    const glass = new Glass({
+      x: child.x,
+      y: child.y,
+      scaleX: child.scaleX,
+      scaleY: child.scaleY,
+      rotation: child.rotation,
+      origin: child.origin,
+      width: child.width,
+      height: child.height,
+      zIndex: child.zIndex,
+      cornerRadius: child.cornerRadius,
+      cornerTransitionSpeed: child.cornerTransitionSpeed,
+    })
+    glass.add(new Html({
+      width: child.width,
+      height: child.height,
+      element: content.element,
+    }))
+    container.add(glass)
   }
 
   return {
-    node: container,
+    nodes: [container],
     containers: [
       {
         id: node.id,
@@ -691,9 +609,6 @@ function nodeTypeLabel(type: EditorNode['type'] | 'scene') {
   if (type === 'scene') {
     return 'Scene'
   }
-  if (type === 'group') {
-    return 'Group'
-  }
   if (type === 'container') {
     return 'Container'
   }
@@ -752,8 +667,8 @@ type InspectorControlsProps = {
   selectedId: string
   selectedNode: EditorNode | null
   removeSelectedNode: () => void
-  addRootChild: (type: 'group' | 'container') => void
-  addChild: (parentId: string, type: 'group' | 'container' | 'glass') => void
+  addRootChild: () => void
+  addChild: (parentId: string) => void
   updateSelectedNode: (update: (node: EditorNode) => EditorNode) => void
 }
 
@@ -777,8 +692,7 @@ function InspectorControls({
                 value: 'Scene root',
                 disabled: true,
               },
-              addRootGroup: button(() => addRootChild('group')),
-              addRootContainer: button(() => addRootChild('container')),
+              addRootContainer: button(addRootChild),
             },
             { collapsed: false },
           ),
@@ -855,25 +769,12 @@ function InspectorControls({
         ),
       }
 
-      if (selectedNode.type === 'group') {
-        return {
-          ...baseSchema,
-          children: folder(
-            {
-              addGroup: button(() => addChild(selectedNode.id, 'group')),
-              addContainer: button(() => addChild(selectedNode.id, 'container')),
-            },
-            { collapsed: false },
-          ),
-        } as any
-      }
-
       if (selectedNode.type === 'container') {
         return {
           ...baseSchema,
           children: folder(
             {
-              addGlass: button(() => addChild(selectedNode.id, 'glass')),
+              addGlass: button(() => addChild(selectedNode.id)),
             },
             { collapsed: false },
           ),
@@ -1072,10 +973,11 @@ export function EditorDemo() {
   const canvasHostRef = useRef<HTMLDivElement | null>(null)
   const rendererRef = useRef<Renderer | null>(null)
   const sceneRef = useRef<Scene | null>(null)
-  const htmlRootRef = useRef<Root | null>(null)
+  const backdropRootRef = useRef<Root | null>(null)
+  const backdropHtmlRef = useRef<Html | null>(null)
   const frameRef = useRef<number | null>(null)
   const lastFrameTimeRef = useRef<number | null>(null)
-  const topLevelRuntimeNodesRef = useRef<Array<Group | Container>>([])
+  const topLevelRuntimeNodesRef = useRef<Container[]>([])
   const runtimeContainersRef = useRef<Map<string, RuntimeContainerEntry>>(new Map())
   const adaptiveTintStatesRef = useRef<Map<string, AdaptiveTintState>>(new Map())
   const backdropSettingsRef = useRef<BackdropSettings>(DEFAULT_BACKDROP_SETTINGS)
@@ -1093,7 +995,13 @@ export function EditorDemo() {
 
     const scene = new Scene()
     const renderer = new Renderer({ scene })
-    const htmlRoot = createRoot(renderer.htmlRoot)
+    const backdropMount = document.createElement('div')
+    const backdropHtml = new Html({
+      zIndex: -1000,
+      element: backdropMount,
+    })
+    scene.add(backdropHtml)
+    const backdropRoot = createRoot(backdropMount)
 
     const canvas = renderer.canvas
     canvas.className = 'editor-preview__canvas'
@@ -1101,7 +1009,17 @@ export function EditorDemo() {
 
     sceneRef.current = scene
     rendererRef.current = renderer
-    htmlRootRef.current = htmlRoot
+    backdropRootRef.current = backdropRoot
+    backdropHtmlRef.current = backdropHtml
+
+    const syncBackdropSize = () => {
+      const bounds = host.getBoundingClientRect()
+      backdropHtml.width = bounds.width
+      backdropHtml.height = bounds.height
+    }
+    const resizeObserver = new ResizeObserver(syncBackdropSize)
+    resizeObserver.observe(host)
+    syncBackdropSize()
 
     function renderLoop(now: number) {
       const lastFrameTime = lastFrameTimeRef.current
@@ -1158,6 +1076,7 @@ export function EditorDemo() {
         frameRef.current = null
       }
       lastFrameTimeRef.current = null
+      resizeObserver.disconnect()
 
       for (const node of topLevelRuntimeNodesRef.current) {
         node.remove()
@@ -1170,19 +1089,21 @@ export function EditorDemo() {
       adaptiveTintStatesRef.current.clear()
 
       queueMicrotask(() => {
-        htmlRoot.unmount()
+        backdropRoot.unmount()
       })
 
+      backdropHtml.remove()
       renderer.destroy()
       rendererRef.current = null
       sceneRef.current = null
-      htmlRootRef.current = null
+      backdropRootRef.current = null
+      backdropHtmlRef.current = null
       canvas.remove()
     }
   }, [])
 
   useEffect(() => {
-    htmlRootRef.current?.render(
+    backdropRootRef.current?.render(
       <EditorBackdrop
         mode={backdropSettings.mode}
         steppedGradientSettings={backdropSettings.steppedGradient}
@@ -1231,9 +1152,11 @@ export function EditorDemo() {
     const previousAdaptiveTintStates = adaptiveTintStatesRef.current
     const nextAdaptiveTintStates = new Map<string, AdaptiveTintState>()
     const nextRuntimeContainers = new Map<string, RuntimeContainerEntry>()
-    const nextTopLevel = sceneState.children.map((child) => {
+    const nextTopLevel = sceneState.children.flatMap((child) => {
       const result = buildRuntimeNode(child)
-      scene.add(result.node)
+      for (const node of result.nodes) {
+        scene.add(node)
+      }
 
       for (const entry of result.containers) {
         const previousAdaptiveTintState = previousAdaptiveTintStates.get(entry.id)
@@ -1259,7 +1182,7 @@ export function EditorDemo() {
         renderer?.setBackdropMetricsTracking(entry.node, true)
       }
 
-      return result.node
+      return result.nodes
     })
 
     topLevelRuntimeNodesRef.current = nextTopLevel
@@ -1286,26 +1209,21 @@ export function EditorDemo() {
     }))
   }
 
-  function addRootChild(type: 'group' | 'container') {
-    const node = type === 'group' ? createGroupNode() : createContainerNode({ children: [createGlassNode()] })
+  function addRootChild() {
+    const node = createContainerNode({ children: [createGlassNode()] })
     setSceneState((current) => ({
       children: [...current.children, node],
     }))
     setSelectedId(node.id)
   }
 
-  function addChild(parentId: string, type: 'group' | 'container' | 'glass') {
-    const node =
-      type === 'group'
-        ? createGroupNode()
-        : type === 'container'
-          ? createContainerNode({ children: [createGlassNode()] })
-          : createGlassNode()
+  function addChild(parentId: string) {
+    const node = createGlassNode()
 
     setSceneState((current) => ({
       children:
         parentId === SCENE_ID
-          ? ([...current.children, node] as RootNode[])
+          ? current.children
           : (insertNode(current.children, parentId, node) as RootNode[]),
     }))
     setSelectedId(node.id)
@@ -1328,10 +1246,7 @@ export function EditorDemo() {
         <section className="editor-panel">
           <div className="editor-panel__header">
             <div className="editor-panel__toolbar">
-              <button type="button" onClick={() => addRootChild('group')}>
-                + Group
-              </button>
-              <button type="button" onClick={() => addRootChild('container')}>
+              <button type="button" onClick={addRootChild}>
                 + Container
               </button>
             </div>
@@ -1384,7 +1299,7 @@ type TreeNodeViewProps = {
   node: RootNode
   selectedId: string
   onSelect: (id: string) => void
-  onAddChild: (parentId: string, type: 'group' | 'container' | 'glass') => void
+  onAddChild: (parentId: string) => void
 }
 
 function TreeNodeView({ node, selectedId, onSelect, onAddChild }: TreeNodeViewProps) {
@@ -1400,20 +1315,9 @@ function TreeNodeView({ node, selectedId, onSelect, onAddChild }: TreeNodeViewPr
           <small>{nodeTypeLabel(node.type)}</small>
         </button>
         <div className="editor-tree__actions">
-          {node.type === 'group' ? (
-            <>
-              <button type="button" onClick={() => onAddChild(node.id, 'group')}>
-                +G
-              </button>
-              <button type="button" onClick={() => onAddChild(node.id, 'container')}>
-                +C
-              </button>
-            </>
-          ) : (
-            <button type="button" onClick={() => onAddChild(node.id, 'glass')}>
-              +S
-            </button>
-          )}
+          <button type="button" onClick={() => onAddChild(node.id)}>
+            +S
+          </button>
         </div>
       </div>
 
@@ -1436,15 +1340,7 @@ function TreeNodeView({ node, selectedId, onSelect, onAddChild }: TreeNodeViewPr
             )
           }
 
-          return (
-            <TreeNodeView
-              key={child.id}
-              node={child}
-              selectedId={selectedId}
-              onSelect={onSelect}
-              onAddChild={onAddChild}
-            />
-          )
+          return null
         })}
       </div>
     </div>

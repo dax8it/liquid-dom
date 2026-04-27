@@ -1,11 +1,12 @@
-import type { Glass } from '../scene'
+import type { Glass, Html } from '../scene'
+import type { Matrix2D } from '../matrix'
 
 export const CONTENT_ATLAS_PADDING = 1
 
 export type GlassContentEntry = {
+  html: Html
   glass: Glass
-  host: HTMLDivElement
-  contentVersion: number
+  elementVersion: number
   width: number
   height: number
   deviceWidth: number
@@ -18,6 +19,7 @@ export type GlassContentEntry = {
   contentV: number
   contentScaleU: number
   contentScaleV: number
+  inverseTransform: Matrix2D
 }
 
 type ContentLayoutRect = {
@@ -30,7 +32,7 @@ type ContentLayoutRect = {
 export type ContentAtlasLayout = {
   width: number
   height: number
-  rects: Map<Glass, ContentLayoutRect>
+  rects: Map<Html, ContentLayoutRect>
 }
 
 function nextPowerOfTwo(value: number) {
@@ -42,7 +44,7 @@ function nextPowerOfTwo(value: number) {
 }
 
 function tryPackContentAtlas(entries: GlassContentEntry[], atlasWidth: number) {
-  const rects = new Map<Glass, ContentLayoutRect>()
+  const rects = new Map<Html, ContentLayoutRect>()
   let cursorX = 0
   let cursorY = 0
   let rowHeight = 0
@@ -61,7 +63,7 @@ function tryPackContentAtlas(entries: GlassContentEntry[], atlasWidth: number) {
       rowHeight = 0
     }
 
-    rects.set(entry.glass, {
+    rects.set(entry.html, {
       x: cursorX,
       y: cursorY,
       width: rectWidth,

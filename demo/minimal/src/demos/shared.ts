@@ -1,6 +1,6 @@
 import type { GlassPointerEvent } from 'liquid-glass-dom'
 
-export type DemoTab = 'pointer' | 'tracker' | 'flex' | 'react'
+export type DemoTab = 'tiny' | 'pointer' | 'html'
 
 export type EventRow = {
   id: number
@@ -13,28 +13,6 @@ export type LiveState = {
   localX: number
   localY: number
   inside: boolean
-}
-
-export type GlassFrame = {
-  x: number
-  y: number
-  width: number
-  height: number
-}
-
-export type TrackedOutline = {
-  x: number
-  y: number
-  width: number
-  height: number
-}
-
-export type DragState = {
-  pointerId: number
-  startClientX: number
-  startClientY: number
-  originX: number
-  originY: number
 }
 
 export const MAX_LOG_ROWS = 10

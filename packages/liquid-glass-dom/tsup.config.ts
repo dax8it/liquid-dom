@@ -1,7 +1,7 @@
 import { defineConfig } from 'tsup'
 
 export default defineConfig({
-  entry: ['src/index.ts', 'src/track-element.ts', 'src/react/index.tsx'],
+  entry: ['src/index.ts'],
   format: ['esm', 'cjs'],
   dts: true,
   clean: true,

@@ -76,7 +76,7 @@ struct ShapeData {
   inverse1: vec4f,
   bounds: vec4f,
   shapeInfo: vec4f,
-  contentRect: vec4f,
+  contentRange: vec4f,
 };
 
 struct VertexOutput {
@@ -233,6 +233,15 @@ ${SHADER_SHARED}
 @group(0) @binding(4) var backgroundTextureBlurred: texture_2d<f32>;
 @group(0) @binding(5) var glassContentTexture: texture_2d<f32>;
 
+struct ContentData {
+  inverse0: vec4f,
+  inverse1: vec4f,
+  bounds: vec4f,
+  atlasRect: vec4f,
+};
+
+@group(0) @binding(6) var<storage, read> contentEntries: array<ContentData>;
+
 fn sampleBackgroundSharp(uv: vec2f) -> vec3f {
   return textureSampleLevel(backgroundTextureSharp, backgroundSampler, uv, 0.0).rgb;
 }
@@ -241,41 +250,37 @@ fn sampleBackgroundBlurred(uv: vec2f) -> vec3f {
   return textureSampleLevel(backgroundTextureBlurred, backgroundSampler, uv, 0.0).rgb;
 }
 
-fn sampleGlassContentAtlas(shape: ShapeData, localUv: vec2f) -> vec4f {
-  if (any(localUv < vec2f(0.0)) || any(localUv > vec2f(1.0))) {
+fn contentLocalPos(content: ContentData, glassLocalPos: vec2f) -> vec2f {
+  return vec2f(
+    content.inverse0.x * glassLocalPos.x + content.inverse0.y * glassLocalPos.y + content.inverse0.z,
+    content.inverse1.x * glassLocalPos.x + content.inverse1.y * glassLocalPos.y + content.inverse1.z,
+  );
+}
+
+fn sampleGlassContentAtlas(content: ContentData, localPos: vec2f) -> vec4f {
+  let size = content.bounds.xy;
+  if (any(size <= vec2f(0.0)) || any(localPos < vec2f(0.0)) || any(localPos > size)) {
     return vec4f(0.0);
   }
 
-  let atlasUv = shape.contentRect.xy + localUv * shape.contentRect.zw;
+  let atlasUv = content.atlasRect.xy + (localPos / size) * content.atlasRect.zw;
   return textureSampleLevel(glassContentTexture, backgroundSampler, atlasUv, 0.0);
 }
 
-fn sampleGlassContentLayer(
-  shape: ShapeData,
-  fragCoord: vec2f,
-  contentDisplacementPxRed: vec2f,
-  contentDisplacementPxGreen: vec2f,
-  contentDisplacementPxBlue: vec2f,
-  pixelWidth: f32,
+fn sampleGlassContentEntry(
+  content: ContentData,
+  glassLocalRed: vec2f,
+  glassLocalGreen: vec2f,
+  glassLocalBlue: vec2f,
+  contentMask: f32,
 ) -> vec4f {
-  if (shape.contentRect.z <= 0.0 || shape.contentRect.w <= 0.0) {
-    return vec4f(0.0);
-  }
-
-  let shapeDistanceAtFrag = shapeDistance(shape, fragCoord);
-  let contentBand = max(globals.surface.x, pixelWidth);
-  let contentMask = 1.0 - smoothstep(contentBand, contentBand + pixelWidth, shapeDistanceAtFrag);
   if (contentMask <= 0.0) {
     return vec4f(0.0);
   }
 
-  let size = max(shape.bounds.zw * 2.0, vec2f(0.0001));
-  let localUvRed = shapeLocalPos(shape, fragCoord + contentDisplacementPxRed) / size;
-  let localUvGreen = shapeLocalPos(shape, fragCoord + contentDisplacementPxGreen) / size;
-  let localUvBlue = shapeLocalPos(shape, fragCoord + contentDisplacementPxBlue) / size;
-  let contentRed = sampleGlassContentAtlas(shape, localUvRed);
-  let contentGreen = sampleGlassContentAtlas(shape, localUvGreen);
-  let contentBlue = sampleGlassContentAtlas(shape, localUvBlue);
+  let contentRed = sampleGlassContentAtlas(content, contentLocalPos(content, glassLocalRed));
+  let contentGreen = sampleGlassContentAtlas(content, contentLocalPos(content, glassLocalGreen));
+  let contentBlue = sampleGlassContentAtlas(content, contentLocalPos(content, glassLocalBlue));
   let alpha = max(contentGreen.a, max(contentRed.a, contentBlue.a)) * contentMask;
   return vec4f(vec3f(contentRed.r, contentGreen.g, contentBlue.b), alpha);
 }
@@ -403,15 +408,26 @@ fn fragmentMain(in: VertexOutput) -> @location(0) vec4f {
   // before any specular contributions are applied.
   var glassInterior = glass;
   for (var i = 0u; i < shapeCount; i = i + 1u) {
-    let contentLayer = sampleGlassContentLayer(
-      shapes[i],
-      fragCoord,
-      contentDisplacementPxRed,
-      contentDisplacementPxGreen,
-      contentDisplacementPxBlue,
-      pixelWidth,
-    );
-    glassInterior = mix(glassInterior, contentLayer.rgb, contentLayer.a);
+    let shape = shapes[i];
+    let contentStart = u32(shape.contentRange.x);
+    let contentCount = u32(shape.contentRange.y);
+    let shapeDistanceAtFrag = shapeDistance(shape, fragCoord);
+    let contentBand = max(globals.surface.x, pixelWidth);
+    let contentMask = 1.0 - smoothstep(contentBand, contentBand + pixelWidth, shapeDistanceAtFrag);
+    let glassLocalRed = shapeLocalPos(shape, fragCoord + contentDisplacementPxRed);
+    let glassLocalGreen = shapeLocalPos(shape, fragCoord + contentDisplacementPxGreen);
+    let glassLocalBlue = shapeLocalPos(shape, fragCoord + contentDisplacementPxBlue);
+
+    for (var contentOffset = 0u; contentOffset < contentCount; contentOffset = contentOffset + 1u) {
+      let contentLayer = sampleGlassContentEntry(
+        contentEntries[contentStart + contentOffset],
+        glassLocalRed,
+        glassLocalGreen,
+        glassLocalBlue,
+        contentMask,
+      );
+      glassInterior = mix(glassInterior, contentLayer.rgb, contentLayer.a);
+    }
   }
 
   // White specular is a separate rim-only highlight driven by 2D normal/light alignment and
@@ -512,5 +528,57 @@ fn vertexMain(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
 @fragment
 fn fragmentMain(in: VertexOutput) -> @location(0) vec4f {
   return textureSampleLevel(presentTexture, presentSampler, in.uv, 0.0);
+}
+`
+
+// Composites one DOM-backed Html texture into the scene using the node's world transform.
+export const HTML_COMPOSITE_SHADER = /* wgsl */ `
+struct HtmlCompositeParams {
+  canvas: vec4f,
+  inverse0: vec4f,
+  inverse1: vec4f,
+  size: vec4f,
+};
+
+@group(0) @binding(0) var compositeSampler: sampler;
+@group(0) @binding(1) var sceneTexture: texture_2d<f32>;
+@group(0) @binding(2) var htmlTexture: texture_2d<f32>;
+@group(0) @binding(3) var<uniform> params: HtmlCompositeParams;
+
+struct VertexOutput {
+  @builtin(position) position: vec4f,
+  @location(0) uv: vec2f,
+};
+
+@vertex
+fn vertexMain(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
+  var positions = array<vec2f, 3>(
+    vec2f(-1.0, -3.0),
+    vec2f(-1.0, 1.0),
+    vec2f(3.0, 1.0),
+  );
+
+  let position = positions[vertexIndex];
+  var output: VertexOutput;
+  output.position = vec4f(position, 0.0, 1.0);
+  output.uv = vec2f(position.x * 0.5 + 0.5, 0.5 - position.y * 0.5);
+  return output;
+}
+
+@fragment
+fn fragmentMain(in: VertexOutput) -> @location(0) vec4f {
+  let sceneColor = textureSampleLevel(sceneTexture, compositeSampler, in.uv, 0.0);
+  let fragCoord = in.uv * params.canvas.xy;
+  let localPos = vec2f(
+    params.inverse0.x * fragCoord.x + params.inverse0.y * fragCoord.y + params.inverse0.z,
+    params.inverse1.x * fragCoord.x + params.inverse1.y * fragCoord.y + params.inverse1.z,
+  );
+
+  if (any(params.size.xy <= vec2f(0.0)) || any(localPos < vec2f(0.0)) || any(localPos > params.size.xy)) {
+    return sceneColor;
+  }
+
+  let htmlColor = textureSampleLevel(htmlTexture, compositeSampler, localPos / params.size.xy, 0.0);
+  return vec4f(mix(sceneColor.rgb, htmlColor.rgb, htmlColor.a), 1.0);
 }
 `

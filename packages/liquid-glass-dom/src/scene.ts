@@ -1,6 +1,16 @@
 import type { GlassPointerEvent, GlassPointerEventType } from './events'
-import { composeTransform, identityMatrix, multiplyMatrices, type Matrix2D } from './matrix'
+import { composeTransform, type Matrix2D } from './matrix'
 import type { Point, RgbaColor, SurfaceProfile, Transform } from './types'
+
+/**
+ * Constructor options for a {@link Html} node.
+ */
+export type HtmlInit = Partial<Transform> & {
+  width?: number
+  height?: number
+  zIndex?: number
+  element?: HTMLElement | null
+}
 
 /**
  * Constructor options for a {@link Glass} node.
@@ -12,7 +22,6 @@ export type GlassInit = Partial<Transform> & {
   cornerTransitionSpeed?: number
   pointerEvents?: boolean
   zIndex?: number
-  content?: HTMLElement | null
 }
 
 export interface GlassEventMap {
@@ -51,15 +60,8 @@ export type ContainerInit = Partial<Transform> & {
   zIndex?: number
 }
 
-/**
- * Constructor options for a {@link Group}.
- */
-export type GroupInit = Partial<Transform>
-
-type SceneChild = Container | Group
-type GroupChild = Container | Group
-
-type ParentNode = Scene | Group | Container
+type SceneChild = Container | Html
+type ParentNode = Scene | Container | Glass
 type SceneMutationListener = () => void
 
 type TraversedContainer = {
@@ -68,8 +70,10 @@ type TraversedContainer = {
   traversalIndex: number
 }
 
-function toRadians(value: number) {
-  return (value * Math.PI) / 180
+export type TraversedSceneLayer = {
+  child: SceneChild
+  transform: Matrix2D
+  traversalIndex: number
 }
 
 function clonePoint(point?: Point): Point {
@@ -131,7 +135,9 @@ function removeFromParent(node: { _parent: ParentNode | null }) {
 
   const scene = findScene(node)
 
-  if (parent instanceof Scene || parent instanceof Group) {
+  if (parent instanceof Scene) {
+    parent._children = parent._children.filter((child) => child !== node)
+  } else if (parent instanceof Container) {
     parent._children = parent._children.filter((child) => child !== node)
   } else {
     parent._children = parent._children.filter((child) => child !== node)
@@ -141,17 +147,136 @@ function removeFromParent(node: { _parent: ParentNode | null }) {
   scene?._notifyMutation()
 }
 
-function ensureNoCycle(parent: Group, child: Group) {
-  if (parent === child) {
-    throw new Error('A Group cannot be added to itself.')
+/**
+ * A DOM-backed scene node that can be layered directly in the scene or inside a glass shape.
+ */
+export class Html implements Transform {
+  /** Horizontal translation in CSS pixels. */
+  x = 0
+  /** Vertical translation in CSS pixels. */
+  y = 0
+  /** Horizontal scale factor. */
+  scaleX = 1
+  /** Vertical scale factor. */
+  scaleY = 1
+  /** Clockwise rotation in radians. */
+  rotation = 0
+  /** Local-space transform origin in CSS pixels. */
+  origin: Point = { x: 0, y: 0 }
+
+  /** Host element copied by the renderer and used by the browser for hit testing. */
+  readonly host: HTMLDivElement
+
+  private _width = 0
+  private _height = 0
+  private _zIndex = 0
+  private _element: HTMLElement | null = null
+  _elementVersion = 0
+  _parent: Scene | Glass | null = null
+
+  constructor(options: HtmlInit = {}) {
+    this.host = document.createElement('div')
+    this.host.style.position = 'absolute'
+    this.host.style.left = '0'
+    this.host.style.top = '0'
+    this.host.style.display = 'block'
+    this.host.style.overflow = 'hidden'
+    // Chrome's HTML-in-canvas copy path can capture an empty texture for scene-level
+    // Html hosts when paint containment is applied here.
+    this.host.style.transformOrigin = '0 0'
+
+    applyTransformDefaults(this, options)
+
+    if (options.width !== undefined) {
+      this.width = options.width
+    } else {
+      this.syncHostSize()
+    }
+    if (options.height !== undefined) {
+      this.height = options.height
+    } else {
+      this.syncHostSize()
+    }
+    if (options.zIndex !== undefined) {
+      this.zIndex = options.zIndex
+    }
+    if (options.element !== undefined) {
+      this.setElement(options.element)
+    }
   }
 
-  let current: ParentNode | null = parent
-  while (current) {
-    if (current === child) {
-      throw new Error('A Group cannot be added to one of its descendants.')
+  /** Node width in CSS pixels. */
+  get width() {
+    return this._width
+  }
+
+  set width(value: number) {
+    if (this._width === value) {
+      return
     }
-    current = '_parent' in current ? current._parent : null
+
+    this._width = value
+    this.syncHostSize()
+    notifySceneMutation(this)
+  }
+
+  /** Node height in CSS pixels. */
+  get height() {
+    return this._height
+  }
+
+  set height(value: number) {
+    if (this._height === value) {
+      return
+    }
+
+    this._height = value
+    this.syncHostSize()
+    notifySceneMutation(this)
+  }
+
+  /** Draw order among sibling scene or glass HTML nodes. */
+  get zIndex() {
+    return this._zIndex
+  }
+
+  set zIndex(value: number) {
+    if (this._zIndex === value) {
+      return
+    }
+
+    this._zIndex = value
+    notifySceneMutation(this)
+  }
+
+  /** The optional child element rendered inside this node's host. */
+  get element() {
+    return this._element
+  }
+
+  /** Replaces the single child element inside this node's host. */
+  setElement(element: HTMLElement | null) {
+    if (this._element === element) {
+      return
+    }
+
+    this._element = element
+    this._elementVersion += 1
+    this.host.replaceChildren()
+    if (element) {
+      this.host.append(element)
+    }
+    notifySceneMutation(this)
+  }
+
+  /** Detaches this HTML node from its parent scene or glass, if attached. */
+  remove() {
+    removeFromParent(this)
+  }
+
+  private syncHostSize() {
+    this.host.style.width = `${this._width}px`
+    this.host.style.height = `${this._height}px`
   }
 }
 
@@ -224,7 +349,7 @@ export class Glass extends EventTarget implements Transform {
     notifySceneMutation(this)
   }
 
-  /** Draw order among content hosts used for DOM hit testing. */
+  /** Draw order among sibling glass nodes in the same container. */
   get zIndex() {
     return this._zIndex
   }
@@ -238,9 +363,8 @@ export class Glass extends EventTarget implements Transform {
     notifySceneMutation(this)
   }
 
-  private _content: HTMLElement | null = null
-  _contentVersion = 0
   _parent: Container | null = null
+  _children: Html[] = []
 
   /**
    * Creates a glass shape descriptor.
@@ -267,9 +391,15 @@ export class Glass extends EventTarget implements Transform {
     if (options.zIndex !== undefined) {
       this.zIndex = options.zIndex
     }
-    if (options.content !== undefined) {
-      this.setContent(options.content)
-    }
+  }
+
+  /** Adds an HTML child to this glass, reparenting it if needed. */
+  add(child: Html) {
+    removeFromParent(child)
+    this._children.push(child)
+    child._parent = this
+    notifySceneMutation(child)
+    return child
   }
 
   /**
@@ -277,33 +407,6 @@ export class Glass extends EventTarget implements Transform {
    */
   remove() {
     removeFromParent(this)
-  }
-
-  /**
-   * The optional DOM element rendered inside this glass.
-   */
-  get content() {
-    return this._content
-  }
-
-  /**
-   * Assigns a DOM element to be rendered inside this glass.
-   */
-  setContent(element: HTMLElement | null) {
-    if (this._content === element) {
-      return
-    }
-
-    this._content = element
-    this._contentVersion += 1
-    notifySceneMutation(this)
-  }
-
-  /**
-   * Removes the DOM element rendered inside this glass, if any.
-   */
-  clearContent() {
-    this.setContent(null)
   }
 
   addEventListener<T extends GlassPointerEventType>(
@@ -401,10 +504,10 @@ export class Container implements Transform {
   reflectionOffset = 18
   /** RGBA tint color layered over the refracted glass interior. */
   tint: RgbaColor = { r: 0.15, g: 0.15, b: 0.15, a: 0.7 }
-  /** Draw order among containers; higher values render later. */
+  /** Draw order among scene layers; higher values render later. */
   zIndex = 0
 
-  _parent: Scene | Group | null = null
+  _parent: Scene | null = null
   _children: Glass[] = []
 
   /**
@@ -487,58 +590,7 @@ export class Container implements Transform {
   }
 
   /**
-   * Detaches this container from its parent scene or group, if attached.
-   */
-  remove() {
-    removeFromParent(this)
-  }
-}
-
-/**
- * A transform-only hierarchy node used to organize containers and nested groups.
- */
-export class Group implements Transform {
-  /** Horizontal translation in CSS pixels. */
-  x = 0
-  /** Vertical translation in CSS pixels. */
-  y = 0
-  /** Horizontal scale factor. */
-  scaleX = 1
-  /** Vertical scale factor. */
-  scaleY = 1
-  /** Clockwise rotation in radians. */
-  rotation = 0
-  /** Local-space transform origin in CSS pixels. */
-  origin: Point = { x: 0, y: 0 }
-
-  _parent: Scene | Group | null = null
-  _children: GroupChild[] = []
-
-  /**
-   * Creates a transform-only group node.
-   */
-  constructor(options: GroupInit = {}) {
-    applyTransformDefaults(this, options)
-  }
-
-  /**
-   * Adds a container or nested group, reparenting it if needed.
-   * Throws if doing so would create a cycle.
-   */
-  add(child: Container | Group) {
-    if (child instanceof Group) {
-      ensureNoCycle(this, child)
-    }
-
-    removeFromParent(child)
-    this._children.push(child)
-    child._parent = this
-    notifySceneMutation(child)
-    return child
-  }
-
-  /**
-   * Detaches this group from its parent scene or group, if attached.
+   * Detaches this container from its parent scene, if attached.
    */
   remove() {
     removeFromParent(this)
@@ -553,20 +605,9 @@ export class Scene {
   _listeners = new Set<SceneMutationListener>()
 
   /**
-   * Adds a container or group to the scene, reparenting it if needed.
-   * Throws if doing so would create a cycle.
+   * Adds a container or HTML layer to the scene, reparenting it if needed.
    */
-  add(child: Container | Group) {
-    if (child instanceof Group) {
-      let current: ParentNode | null = this
-      while (current) {
-        if (current === child) {
-          throw new Error('A Group cannot be added to one of its descendants.')
-        }
-        current = '_parent' in current ? current._parent : null
-      }
-    }
-
+  add<T extends SceneChild>(child: T): T {
     removeFromParent(child)
     this._children.push(child)
     child._parent = this
@@ -589,27 +630,25 @@ export class Scene {
 }
 
 /**
+ * Flattens direct scene children into render layers with composed transforms.
+ */
+export function flattenSceneLayers(scene: Scene): TraversedSceneLayer[] {
+  return scene._children.map((child, traversalIndex) => ({
+    child,
+    transform: composeTransform(child),
+    traversalIndex,
+  }))
+}
+
+/**
  * Flattens the scene hierarchy into renderable containers with composed world transforms.
  */
 export function flattenContainers(scene: Scene): TraversedContainer[] {
-  const result: TraversedContainer[] = []
-
-  function visit(children: SceneChild[], parentTransform: Matrix2D) {
-    for (const child of children) {
-      const nextTransform = multiplyMatrices(parentTransform, composeTransform(child))
-      if (child instanceof Group) {
-        visit(child._children, nextTransform)
-        continue
-      }
-
-      result.push({
-        container: child,
-        transform: nextTransform,
-        traversalIndex: result.length,
-      })
-    }
-  }
-
-  visit(scene._children, identityMatrix())
-  return result
+  return flattenSceneLayers(scene)
+    .filter((entry): entry is TraversedSceneLayer & { child: Container } => entry.child instanceof Container)
+    .map((entry) => ({
+      container: entry.child,
+      transform: entry.transform,
+      traversalIndex: entry.traversalIndex,
+    }))
 }

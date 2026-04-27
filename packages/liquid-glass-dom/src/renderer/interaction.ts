@@ -28,6 +28,7 @@ export type PointerSnapshot = {
 export type PointerState = {
   hoveredGlass: Glass | null
   capturedGlass: Glass | null
+  capturedWithNativePointerCapture: boolean
   pressedGlass: Glass | null
   lastSnapshot: PointerSnapshot | null
 }
