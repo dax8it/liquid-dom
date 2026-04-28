@@ -139,7 +139,6 @@ type RendererInit = {
 }
 
 type RenderTargetSet = {
-  background: GPUTexture
   blurPing: GPUTexture
   blur: GPUTexture
   sceneA: GPUTexture
@@ -229,7 +228,6 @@ function destroyTargets(targets: RenderTargetSet | null) {
     return
   }
 
-  targets.background.destroy()
   targets.blurPing.destroy()
   targets.blur.destroy()
   targets.sceneA.destroy()
@@ -790,7 +788,6 @@ export class Renderer {
       this.targetCanvas.height = nextHeight
       destroyTargets(this.targets)
       this.targets = {
-        background: createRenderTarget(this.device, this.presentationFormat, nextWidth, nextHeight),
         blurPing: createRenderTarget(this.device, this.presentationFormat, nextWidth, nextHeight),
         blur: createRenderTarget(this.device, this.presentationFormat, nextWidth, nextHeight),
         sceneA: createRenderTarget(this.device, this.presentationFormat, nextWidth, nextHeight),
@@ -2174,7 +2171,6 @@ export class Renderer {
       !previousFrame ||
       !this.device ||
       !this.context ||
-      !this.targets ||
       !this.lastFrameTexture ||
       previousWidth <= 0 ||
       previousHeight <= 0
@@ -2187,7 +2183,6 @@ export class Renderer {
     const encoder = this.device.createCommandEncoder()
 
     this.clearTexture(encoder, this.lastFrameTexture)
-    this.clearTexture(encoder, this.targets.background)
 
     const currentTexture = this.context.getCurrentTexture()
     this.clearTexture(encoder, currentTexture)
@@ -2202,7 +2197,6 @@ export class Renderer {
     }
 
     copyTextureRegion(encoder, previousFrame, this.lastFrameTexture, region)
-    copyTextureRegion(encoder, previousFrame, this.targets.background, region)
     copyTextureRegion(encoder, previousFrame, currentTexture, region)
     this.device.queue.submit([encoder.finish()])
   }
@@ -2306,10 +2300,10 @@ export class Renderer {
 
     const seenContainers = new Set<Container>()
     let encoder = this.device.createCommandEncoder()
-    this.clearTexture(encoder, this.targets.background)
+    this.clearTexture(encoder, this.targets.sceneA)
 
-    let currentScene = this.targets.background
-    let nextScene = this.targets.sceneA
+    let currentScene = this.targets.sceneA
+    let nextScene = this.targets.sceneB
 
     for (const entry of layers) {
       if (entry.child instanceof Html) {
