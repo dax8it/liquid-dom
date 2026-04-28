@@ -1,11 +1,16 @@
+import {
+  BackdropMetricsBoundsLayout,
+  BlurParamsLayout,
+  ContentDataLayout,
+  GlobalsLayout,
+  HtmlCompositeParamsLayout,
+  ShapeDataLayout,
+} from './renderer/shader-layouts'
+
 // Used by the two-pass separable blur pipeline to build the blurred backdrop
 // that glass refraction, reflection, and metrics sampling read from.
 export const BLUR_SHADER = /* wgsl */ `
-struct BlurParams {
-  direction: vec2f,
-  radius: f32,
-  _padding: f32,
-};
+${BlurParamsLayout.wgsl('BlurParams')}
 
 @group(0) @binding(0) var blurSampler: sampler;
 @group(0) @binding(1) var inputTexture: texture_2d<f32>;
@@ -38,7 +43,7 @@ fn gaussianWeight(index: f32, sigma: f32) -> f32 {
 @fragment
 fn fragmentMain(in: VertexOutput) -> @location(0) vec4f {
   let textureSize = vec2f(textureDimensions(inputTexture));
-  let blurStep = blurParams.direction / max(textureSize, vec2f(1.0)) * (blurParams.radius / 4.0);
+  let blurStep = blurParams.params.xy / max(textureSize, vec2f(1.0)) * (blurParams.params.z / 4.0);
   let sigma = 2.0;
   let clampedUv = clamp(in.uv, vec2f(0.0), vec2f(1.0));
 
@@ -60,23 +65,9 @@ fn fragmentMain(in: VertexOutput) -> @location(0) vec4f {
 // Shared SDF, profile, and fullscreen-triangle helpers used by the glass and
 // metrics passes so both evaluate the same fused shape field.
 const SHADER_SHARED = /* wgsl */ `
-struct Globals {
-  canvas: vec4f,
-  shape: vec4f,
-  glass: vec4f,
-  content: vec4f,
-  lighting: vec4f,
-  specular: vec4f,
-  specularSecondary: vec4f,
-  tint: vec4f,
-};
+${GlobalsLayout.wgsl('Globals')}
 
-struct ShapeData {
-  inverse0: vec4f,
-  inverse1: vec4f,
-  geometry: vec4f,
-  contentRange: vec4f,
-};
+${ShapeDataLayout.wgsl('ShapeData')}
 
 struct VertexOutput {
   @builtin(position) position: vec4f,
@@ -233,11 +224,7 @@ ${SHADER_SHARED}
 @group(0) @binding(4) var backgroundTextureBlurred: texture_2d<f32>;
 @group(0) @binding(5) var glassContentTexture: texture_2d<f32>;
 
-struct ContentData {
-  inverse0: vec4f,
-  inverse1: vec4f,
-  atlasRect: vec4f,
-};
+${ContentDataLayout.wgsl('ContentData')}
 
 @group(0) @binding(6) var<storage, read> contentEntries: array<ContentData>;
 
@@ -475,10 +462,7 @@ fn fragmentMain(in: VertexOutput) -> @location(0) vec4f {
 export const METRICS_SHADER = /* wgsl */ `
 ${SHADER_SHARED}
 
-struct MetricsBounds {
-  min: vec2f,
-  max: vec2f,
-};
+${BackdropMetricsBoundsLayout.wgsl('MetricsBounds')}
 
 @group(0) @binding(0) var<uniform> globals: Globals;
 @group(0) @binding(1) var<storage, read> shapes: array<ShapeData>;
@@ -489,7 +473,7 @@ struct MetricsBounds {
 @fragment
 fn fragmentMain(in: VertexOutput) -> @location(0) vec4f {
   let shapeCount = u32(globals.shape.z);
-  let positionPx = mix(metricsBounds.min, metricsBounds.max, in.uv);
+  let positionPx = mix(metricsBounds.bounds.xy, metricsBounds.bounds.zw, in.uv);
   let insideCanvas =
     all(positionPx >= vec2f(0.0)) &&
     all(positionPx <= globals.canvas.xy);
@@ -505,11 +489,7 @@ fn fragmentMain(in: VertexOutput) -> @location(0) vec4f {
 
 // Composites one DOM-backed Html texture into the scene using the node's world transform.
 export const HTML_COMPOSITE_SHADER = /* wgsl */ `
-struct HtmlCompositeParams {
-  canvas: vec4f,
-  inverse0: vec4f,
-  inverse1: vec4f,
-};
+${HtmlCompositeParamsLayout.wgsl('HtmlCompositeParams')}
 
 @group(0) @binding(0) var compositeSampler: sampler;
 @group(0) @binding(1) var sceneTexture: texture_2d<f32>;

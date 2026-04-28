@@ -33,6 +33,14 @@ import {
   parseBackdropMetrics,
   type BoundsRect,
 } from './metrics'
+import {
+  BackdropMetricsBoundsLayout,
+  BlurParamsLayout,
+  ContentDataLayout,
+  GlobalsLayout,
+  HtmlCompositeParamsLayout,
+  ShapeDataLayout,
+} from './shader-layouts'
 import { Container, flattenSceneLayers, Glass, Html, Scene, type TraversedSceneLayer } from '../scene'
 import { BLUR_SHADER, GLASS_SHADER, HTML_COMPOSITE_SHADER, METRICS_SHADER } from '../shaders'
 import type { BackdropMetrics, SurfaceProfile } from '../types'
@@ -50,10 +58,6 @@ const GPU_TEXTURE_USAGE = {
   COPY_DST: 0x02,
   RENDER_ATTACHMENT: 0x10,
 } as const
-
-const SHAPE_DATA_FLOATS = 16
-const CONTENT_DATA_FLOATS = 12
-const HTML_COMPOSITE_PARAM_FLOATS = 12
 
 type GPUQueueWithElementCopy = GPUQueue & {
   copyElementImageToTexture: (
@@ -316,11 +320,11 @@ export class Renderer {
   maxDpr: number
 
   private readonly targetCanvas: HTMLCanvasElement
-  private readonly globals = new Float32Array(32)
-  private readonly blurHorizontalParams = new Float32Array(4)
-  private readonly blurVerticalParams = new Float32Array(4)
-  private readonly backdropMetricsBounds = new Float32Array(4)
-  private readonly htmlCompositeParams = new Float32Array(HTML_COMPOSITE_PARAM_FLOATS)
+  private readonly globals = GlobalsLayout.createArray()
+  private readonly blurHorizontalParams = BlurParamsLayout.createArray()
+  private readonly blurVerticalParams = BlurParamsLayout.createArray()
+  private readonly backdropMetricsBounds = BackdropMetricsBoundsLayout.createArray()
+  private readonly htmlCompositeParams = HtmlCompositeParamsLayout.createArray()
   private readonly backdropMetricsStateByContainer = new WeakMap<Container, BackdropMetricsState>()
   private readonly trackedBackdropContainers = new Set<Container>()
   private readonly pendingBackdropMetricStates = new Set<BackdropMetricsState>()
@@ -794,7 +798,7 @@ export class Renderer {
 
     this.shapesBuffer?.destroy()
     this.shapesBuffer = this.device.createBuffer({
-      size: nextCapacity * SHAPE_DATA_FLOATS * Float32Array.BYTES_PER_ELEMENT,
+      size: nextCapacity * ShapeDataLayout.byteSize,
       usage: GPU_BUFFER_USAGE.STORAGE | GPU_BUFFER_USAGE.COPY_DST,
     })
     this.shapeCapacity = nextCapacity
@@ -812,7 +816,7 @@ export class Renderer {
 
     this.contentEntriesBuffer?.destroy()
     this.contentEntriesBuffer = this.device.createBuffer({
-      size: nextCapacity * CONTENT_DATA_FLOATS * Float32Array.BYTES_PER_ELEMENT,
+      size: nextCapacity * ContentDataLayout.byteSize,
       usage: GPU_BUFFER_USAGE.STORAGE | GPU_BUFFER_USAGE.COPY_DST,
     })
     this.contentEntryCapacity = nextCapacity
@@ -1681,26 +1685,31 @@ export class Renderer {
       return
     }
 
-    const packed = new Float32Array(Math.max(entries.length, 1) * CONTENT_DATA_FLOATS)
+    const packed = ContentDataLayout.createArray(entries.length)
     for (let index = 0; index < entries.length; index += 1) {
       const entry = entries[index]
-      const offset = index * CONTENT_DATA_FLOATS
       const inverse = entry.inverseTransform
 
-      packed[offset + 0] = inverse.a
-      packed[offset + 1] = inverse.c
-      packed[offset + 2] = inverse.e
-      packed[offset + 3] = getCopiedCssSize(entry.copiedDeviceWidth, entry.deviceWidth, entry.width)
-
-      packed[offset + 4] = inverse.b
-      packed[offset + 5] = inverse.d
-      packed[offset + 6] = inverse.f
-      packed[offset + 7] = getCopiedCssSize(entry.copiedDeviceHeight, entry.deviceHeight, entry.height)
-
-      packed[offset + 8] = (entry.atlasX + CONTENT_ATLAS_PADDING) / this.glassContentAtlasWidth
-      packed[offset + 9] = (entry.atlasY + CONTENT_ATLAS_PADDING) / this.glassContentAtlasHeight
-      packed[offset + 10] = getTextureUvScale(entry.deviceWidth, entry.width, this.glassContentAtlasWidth)
-      packed[offset + 11] = getTextureUvScale(entry.deviceHeight, entry.height, this.glassContentAtlasHeight)
+      ContentDataLayout.writeAt(packed, index, {
+        inverse0: {
+          a: inverse.a,
+          c: inverse.c,
+          e: inverse.e,
+          copiedWidth: getCopiedCssSize(entry.copiedDeviceWidth, entry.deviceWidth, entry.width),
+        },
+        inverse1: {
+          b: inverse.b,
+          d: inverse.d,
+          f: inverse.f,
+          copiedHeight: getCopiedCssSize(entry.copiedDeviceHeight, entry.deviceHeight, entry.height),
+        },
+        atlasRect: {
+          u: (entry.atlasX + CONTENT_ATLAS_PADDING) / this.glassContentAtlasWidth,
+          v: (entry.atlasY + CONTENT_ATLAS_PADDING) / this.glassContentAtlasHeight,
+          uScale: getTextureUvScale(entry.deviceWidth, entry.width, this.glassContentAtlasWidth),
+          vScale: getTextureUvScale(entry.deviceHeight, entry.height, this.glassContentAtlasHeight),
+        },
+      })
     }
 
     this.device.queue.writeBuffer(this.contentEntriesBuffer, 0, packed)
@@ -1791,45 +1800,49 @@ export class Renderer {
     const height = this.targetCanvas.height
     const dpr = this.currentDpr
 
-    this.globals[0] = width
-    this.globals[1] = height
-    this.globals[2] = 0
-    this.globals[3] = 0
-
-    this.globals[4] = container.spacing * dpr
-    this.globals[5] = container.bezelWidth * dpr
-    this.globals[6] = shapeCount
-    this.globals[7] = getSurfaceProfileIndex(container.surfaceProfile)
-
-    this.globals[8] = container.thickness * dpr
-    this.globals[9] = container.displacementFactor
-    this.globals[10] = container.ior
-    this.globals[11] = container.dispersion
-
-    this.globals[12] = container.contentIor
-    this.globals[13] = container.contentDepth * dpr
-    this.globals[14] = 0
-    this.globals[15] = 0
-
-    this.globals[16] = Math.sin(container.lightDirection)
-    this.globals[17] = -Math.cos(container.lightDirection)
-    this.globals[18] = 0
-    this.globals[19] = 0
-
-    this.globals[20] = container.specularStrength
-    this.globals[21] = container.specularWidth * dpr
-    this.globals[22] = container.specularSharpness
-    this.globals[23] = container.specularOpacity
-
-    this.globals[24] = container.oppositeSpecularStrength
-    this.globals[25] = container.specularFalloff
-    this.globals[26] = container.reflectionOffset * dpr
-    this.globals[27] = 0
-
-    this.globals[28] = container.tint.r
-    this.globals[29] = container.tint.g
-    this.globals[30] = container.tint.b
-    this.globals[31] = container.tint.a
+    GlobalsLayout.write(this.globals, {
+      canvas: {
+        width,
+        height,
+      },
+      shape: {
+        smoothing: container.spacing * dpr,
+        bezelWidth: container.bezelWidth * dpr,
+        shapeCount,
+        surfaceProfile: getSurfaceProfileIndex(container.surfaceProfile),
+      },
+      glass: {
+        thickness: container.thickness * dpr,
+        displacementFactor: container.displacementFactor,
+        ior: container.ior,
+        dispersion: container.dispersion,
+      },
+      content: {
+        ior: container.contentIor,
+        depth: container.contentDepth * dpr,
+      },
+      lighting: {
+        x: Math.sin(container.lightDirection),
+        y: -Math.cos(container.lightDirection),
+      },
+      specular: {
+        strength: container.specularStrength,
+        width: container.specularWidth * dpr,
+        sharpness: container.specularSharpness,
+        opacity: container.specularOpacity,
+      },
+      specularSecondary: {
+        oppositeStrength: container.oppositeSpecularStrength,
+        falloff: container.specularFalloff,
+        reflectionOffset: container.reflectionOffset * dpr,
+      },
+      tint: {
+        r: container.tint.r,
+        g: container.tint.g,
+        b: container.tint.b,
+        a: container.tint.a,
+      },
+    })
 
     this.device.queue.writeBuffer(this.globalsBuffer, 0, this.globals)
   }
@@ -1840,15 +1853,20 @@ export class Renderer {
     }
 
     const blurRadius = container.blur * this.currentDpr
-    this.blurHorizontalParams[0] = 1
-    this.blurHorizontalParams[1] = 0
-    this.blurHorizontalParams[2] = blurRadius
-    this.blurHorizontalParams[3] = 0
-
-    this.blurVerticalParams[0] = 0
-    this.blurVerticalParams[1] = 1
-    this.blurVerticalParams[2] = blurRadius
-    this.blurVerticalParams[3] = 0
+    BlurParamsLayout.write(this.blurHorizontalParams, {
+      params: {
+        directionX: 1,
+        directionY: 0,
+        radius: blurRadius,
+      },
+    })
+    BlurParamsLayout.write(this.blurVerticalParams, {
+      params: {
+        directionX: 0,
+        directionY: 1,
+        radius: blurRadius,
+      },
+    })
 
     this.device.queue.writeBuffer(this.blurHorizontalBuffer, 0, this.blurHorizontalParams)
     this.device.queue.writeBuffer(this.blurVerticalBuffer, 0, this.blurVerticalParams)
@@ -1859,17 +1877,21 @@ export class Renderer {
       return
     }
 
-    this.backdropMetricsBounds[0] = bounds.minX
-    this.backdropMetricsBounds[1] = bounds.minY
-    this.backdropMetricsBounds[2] = bounds.maxX
-    this.backdropMetricsBounds[3] = bounds.maxY
+    BackdropMetricsBoundsLayout.write(this.backdropMetricsBounds, {
+      bounds: {
+        minX: bounds.minX,
+        minY: bounds.minY,
+        maxX: bounds.maxX,
+        maxY: bounds.maxY,
+      },
+    })
     this.device.queue.writeBuffer(this.backdropMetricsBoundsBuffer, 0, this.backdropMetricsBounds)
   }
 
   private packShapes(container: Container, containerTransform: Matrix2D): PackedShapesResult {
     const dpr = this.currentDpr
     const glasses = this.getSortedGlasses(container)
-    const packed = new Float32Array(Math.max(glasses.length, 1) * SHAPE_DATA_FLOATS)
+    const packed = ShapeDataLayout.createArray(glasses.length)
     const bounds = createEmptyBounds()
     let activeCount = 0
 
@@ -1890,36 +1912,45 @@ export class Renderer {
       expandBounds(bounds, bottomLeft.x, bottomLeft.y)
       expandBounds(bounds, bottomRight.x, bottomRight.y)
 
-      const offset = activeCount * SHAPE_DATA_FLOATS
       const contentRange = this.glassContentRanges.get(glass)
       const halfWidth = glass.width * 0.5
       const halfHeight = glass.height * 0.5
-      packed[offset + 0] = inverse.a
-      packed[offset + 1] = inverse.c
-      packed[offset + 2] = inverse.e
-      packed[offset + 3] = getMinimumScale(worldDevice)
-
-      packed[offset + 4] = inverse.b
-      packed[offset + 5] = inverse.d
-      packed[offset + 6] = inverse.f
-      packed[offset + 7] = glass.cornerRadius
-
-      packed[offset + 8] = halfWidth
-      packed[offset + 9] = halfHeight
-      packed[offset + 10] = glass.cornerTransitionSpeed
-      packed[offset + 11] = 0
-
-      packed[offset + 12] = contentRange?.start ?? 0
-      packed[offset + 13] = contentRange?.count ?? 0
-      packed[offset + 14] = 0
-      packed[offset + 15] = 0
+      ShapeDataLayout.writeAt(packed, activeCount, {
+        inverse0: {
+          a: inverse.a,
+          c: inverse.c,
+          e: inverse.e,
+          minimumScale: getMinimumScale(worldDevice),
+        },
+        inverse1: {
+          b: inverse.b,
+          d: inverse.d,
+          f: inverse.f,
+          cornerRadius: glass.cornerRadius,
+        },
+        geometry: {
+          halfWidth,
+          halfHeight,
+          cornerTransitionSpeed: glass.cornerTransitionSpeed,
+        },
+        contentRange: {
+          start: contentRange?.start ?? 0,
+          count: contentRange?.count ?? 0,
+        },
+      })
 
       activeCount += 1
     }
 
     this.ensureShapesBuffer(activeCount)
     if (this.device && this.shapesBuffer) {
-      this.device.queue.writeBuffer(this.shapesBuffer, 0, packed)
+      this.device.queue.writeBuffer(
+        this.shapesBuffer,
+        0,
+        packed,
+        0,
+        Math.max(activeCount, 1) * ShapeDataLayout.floatCount,
+      )
     }
 
     return {
@@ -2169,20 +2200,26 @@ export class Renderer {
     }
 
     const inverse = entry.inverseTransform
-    this.htmlCompositeParams[0] = this.targetCanvas.width
-    this.htmlCompositeParams[1] = this.targetCanvas.height
-    this.htmlCompositeParams[2] = getTextureUvScale(entry.deviceWidth, entry.width, entry.textureWidth)
-    this.htmlCompositeParams[3] = getTextureUvScale(entry.deviceHeight, entry.height, entry.textureHeight)
-
-    this.htmlCompositeParams[4] = inverse.a
-    this.htmlCompositeParams[5] = inverse.c
-    this.htmlCompositeParams[6] = inverse.e
-    this.htmlCompositeParams[7] = getCopiedCssSize(entry.copiedDeviceWidth, entry.deviceWidth, entry.width)
-
-    this.htmlCompositeParams[8] = inverse.b
-    this.htmlCompositeParams[9] = inverse.d
-    this.htmlCompositeParams[10] = inverse.f
-    this.htmlCompositeParams[11] = getCopiedCssSize(entry.copiedDeviceHeight, entry.deviceHeight, entry.height)
+    HtmlCompositeParamsLayout.write(this.htmlCompositeParams, {
+      canvas: {
+        width: this.targetCanvas.width,
+        height: this.targetCanvas.height,
+        uScale: getTextureUvScale(entry.deviceWidth, entry.width, entry.textureWidth),
+        vScale: getTextureUvScale(entry.deviceHeight, entry.height, entry.textureHeight),
+      },
+      inverse0: {
+        a: inverse.a,
+        c: inverse.c,
+        e: inverse.e,
+        copiedWidth: getCopiedCssSize(entry.copiedDeviceWidth, entry.deviceWidth, entry.width),
+      },
+      inverse1: {
+        b: inverse.b,
+        d: inverse.d,
+        f: inverse.f,
+        copiedHeight: getCopiedCssSize(entry.copiedDeviceHeight, entry.deviceHeight, entry.height),
+      },
+    })
 
     this.device.queue.writeBuffer(this.htmlCompositeParamsBuffer, 0, this.htmlCompositeParams)
   }
