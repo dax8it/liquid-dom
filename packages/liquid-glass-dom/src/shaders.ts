@@ -7,125 +7,117 @@ import {
   ShapeDataLayout,
 } from './renderer/shader-layouts'
 
-// Used by the two-pass separable blur pipeline to build the blurred backdrop
-// that glass refraction, reflection, and metrics sampling read from.
-export const BLUR_SHADER = /* wgsl */ `
+const FULLSCREEN_VERTEX = /* wgsl */ `
+struct VertexOutput {
+  @builtin(position) position: vec4f,
+  @location(0) uv: vec2f,
+};
+
+@vertex
+fn vertexMain(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
+  var positions = array<vec2f, 3>(
+    vec2f(-1.0, -3.0),
+    vec2f(-1.0, 1.0),
+    vec2f(3.0, 1.0),
+  );
+
+  let position = positions[vertexIndex];
+  var output: VertexOutput;
+  output.position = vec4f(position, 0.0, 1.0);
+  output.uv = vec2f(position.x * 0.5 + 0.5, 0.5 - position.y * 0.5);
+  return output;
+}
+`
+
+// Averages four source pixels into one lower-resolution pixel. This is safe for
+// both opaque backdrop color and premultiplied displacement fields.
+export const DOWNSAMPLE_SHADER = /* wgsl */ `
+${FULLSCREEN_VERTEX}
+
+@group(0) @binding(0) var downsampleSampler: sampler;
+@group(0) @binding(1) var inputTexture: texture_2d<f32>;
+
+@fragment
+fn fragmentMain(in: VertexOutput) -> @location(0) vec4f {
+  let textureSize = vec2f(textureDimensions(inputTexture));
+  let texel = 1.0 / max(textureSize, vec2f(1.0));
+  let clampedUv = clamp(in.uv, vec2f(0.0), vec2f(1.0));
+
+  return (
+    textureSampleLevel(inputTexture, downsampleSampler, clampedUv + texel * vec2f(-0.5, -0.5), 0.0) +
+    textureSampleLevel(inputTexture, downsampleSampler, clampedUv + texel * vec2f(0.5, -0.5), 0.0) +
+    textureSampleLevel(inputTexture, downsampleSampler, clampedUv + texel * vec2f(-0.5, 0.5), 0.0) +
+    textureSampleLevel(inputTexture, downsampleSampler, clampedUv + texel * vec2f(0.5, 0.5), 0.0)
+  ) * 0.25;
+}
+`
+
+// Upsamples a lower-resolution adaptive blur level using the pipeline sampler's
+// linear filtering. Premultiplied fields stay premultiplied through this step.
+export const UPSAMPLE_SHADER = /* wgsl */ `
+${FULLSCREEN_VERTEX}
+
+@group(0) @binding(0) var upsampleSampler: sampler;
+@group(0) @binding(1) var inputTexture: texture_2d<f32>;
+
+@fragment
+fn fragmentMain(in: VertexOutput) -> @location(0) vec4f {
+  return textureSampleLevel(inputTexture, upsampleSampler, in.uv, 0.0);
+}
+`
+
+// Shared adaptive blur kernel for backdrop color and premultiplied displacement
+// fields. The constants are generated from a sigma=4, 17-tap Gaussian over
+// [-8..8]. Neighboring same-side taps are paired into one bilinear-filtered
+// sample, so the shader keeps the smoothness of the dense kernel without paying
+// for all 17 texture reads.
+export const ADAPTIVE_BLUR_SHADER = /* wgsl */ `
 ${BlurParamsLayout.wgsl('BlurParams')}
+${FULLSCREEN_VERTEX}
 
 @group(0) @binding(0) var blurSampler: sampler;
 @group(0) @binding(1) var inputTexture: texture_2d<f32>;
 @group(0) @binding(2) var<uniform> blurParams: BlurParams;
 
-struct VertexOutput {
-  @builtin(position) position: vec4f,
-  @location(0) uv: vec2f,
-};
-
-@vertex
-fn vertexMain(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
-  var positions = array<vec2f, 3>(
-    vec2f(-1.0, -3.0),
-    vec2f(-1.0, 1.0),
-    vec2f(3.0, 1.0),
-  );
-
-  let position = positions[vertexIndex];
-  var output: VertexOutput;
-  output.position = vec4f(position, 0.0, 1.0);
-  output.uv = vec2f(position.x * 0.5 + 0.5, 0.5 - position.y * 0.5);
-  return output;
-}
-
-fn gaussianWeight(index: f32, sigma: f32) -> f32 {
-  return exp(-0.5 * index * index / max(sigma * sigma, 0.0001));
-}
+const ADAPTIVE_BLUR_TAP_RADIUS: f32 = 8.0;
+const ADAPTIVE_BLUR_CENTER_WEIGHT: f32 = 0.10315262;
+const ADAPTIVE_BLUR_PAIR_OFFSETS: array<f32, 4> = array<f32, 4>(
+  1.4765797,
+  3.4455295,
+  5.414899,
+  7.384912,
+);
+const ADAPTIVE_BLUR_PAIR_WEIGHTS: array<f32, 4> = array<f32, 4>(
+  0.19101082,
+  0.1404289,
+  0.08071546,
+  0.03626851,
+);
 
 @fragment
 fn fragmentMain(in: VertexOutput) -> @location(0) vec4f {
   let textureSize = vec2f(textureDimensions(inputTexture));
-  let blurStep = blurParams.params.xy / max(textureSize, vec2f(1.0)) * (blurParams.params.z / 4.0);
-  let sigma = 2.0;
-  let clampedUv = clamp(in.uv, vec2f(0.0), vec2f(1.0));
-
-  var color = vec3f(0.0);
-  var totalWeight = 0.0;
-
-  for (var i = -4; i <= 4; i = i + 1) {
-    let index = f32(i);
-    let weight = gaussianWeight(index, sigma);
-    let sampleUv = clamp(clampedUv + blurStep * index, vec2f(0.0), vec2f(1.0));
-    color = color + textureSampleLevel(inputTexture, blurSampler, sampleUv, 0.0).rgb * weight;
-    totalWeight = totalWeight + weight;
-  }
-
-  return vec4f(color / max(totalWeight, 0.0001), 1.0);
-}
-`
-
-// Blurs premultiplied displacement-field data. The field stores the bevel slope
-// in rg multiplied by alpha, with alpha acting as the validity weight.
-export const DISPLACEMENT_FIELD_BLUR_SHADER = /* wgsl */ `
-${BlurParamsLayout.wgsl('BlurParams')}
-
-@group(0) @binding(0) var fieldSampler: sampler;
-@group(0) @binding(1) var inputTexture: texture_2d<f32>;
-@group(0) @binding(2) var<uniform> blurParams: BlurParams;
-
-const DISPLACEMENT_FIELD_BLUR_TAP_RADIUS: i32 = 8;
-const DISPLACEMENT_FIELD_BLUR_SIGMA: f32 = 4.0;
-
-struct VertexOutput {
-  @builtin(position) position: vec4f,
-  @location(0) uv: vec2f,
-};
-
-@vertex
-fn vertexMain(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
-  var positions = array<vec2f, 3>(
-    vec2f(-1.0, -3.0),
-    vec2f(-1.0, 1.0),
-    vec2f(3.0, 1.0),
-  );
-
-  let position = positions[vertexIndex];
-  var output: VertexOutput;
-  output.position = vec4f(position, 0.0, 1.0);
-  output.uv = vec2f(position.x * 0.5 + 0.5, 0.5 - position.y * 0.5);
-  return output;
-}
-
-fn gaussianWeight(index: f32, sigma: f32) -> f32 {
-  return exp(-0.5 * index * index / max(sigma * sigma, 0.0001));
-}
-
-@fragment
-fn fragmentMain(in: VertexOutput) -> @location(0) vec4f {
-  let textureSize = vec2f(textureDimensions(inputTexture));
-  // Use a denser 17-tap kernel for the displacement field than the backdrop blur.
-  // With radius 8 this samples every pixel from -8..8, avoiding visible tap bands
-  // in the displacement map while preserving the requested outer blur radius.
   let blurStep =
     blurParams.params.xy /
     max(textureSize, vec2f(1.0)) *
-    (blurParams.params.z / f32(DISPLACEMENT_FIELD_BLUR_TAP_RADIUS));
+    (blurParams.params.z / ADAPTIVE_BLUR_TAP_RADIUS);
   let clampedUv = clamp(in.uv, vec2f(0.0), vec2f(1.0));
 
-  var field = vec4f(0.0);
-  var totalWeight = 0.0;
+  var color = textureSampleLevel(inputTexture, blurSampler, clampedUv, 0.0) * ADAPTIVE_BLUR_CENTER_WEIGHT;
 
-  for (
-    var i = -DISPLACEMENT_FIELD_BLUR_TAP_RADIUS;
-    i <= DISPLACEMENT_FIELD_BLUR_TAP_RADIUS;
-    i = i + 1
-  ) {
-    let index = f32(i);
-    let weight = gaussianWeight(index, DISPLACEMENT_FIELD_BLUR_SIGMA);
-    let sampleUv = clamp(clampedUv + blurStep * index, vec2f(0.0), vec2f(1.0));
-    field = field + textureSampleLevel(inputTexture, fieldSampler, sampleUv, 0.0) * weight;
-    totalWeight = totalWeight + weight;
+  for (var i = 0u; i < 4u; i = i + 1u) {
+    let offset = blurStep * ADAPTIVE_BLUR_PAIR_OFFSETS[i];
+    let weight = ADAPTIVE_BLUR_PAIR_WEIGHTS[i];
+    color =
+      color +
+      (
+        textureSampleLevel(inputTexture, blurSampler, clamp(clampedUv + offset, vec2f(0.0), vec2f(1.0)), 0.0) +
+        textureSampleLevel(inputTexture, blurSampler, clamp(clampedUv - offset, vec2f(0.0), vec2f(1.0)), 0.0)
+      ) *
+      weight;
   }
 
-  return field / max(totalWeight, 0.0001);
+  return color;
 }
 `
 

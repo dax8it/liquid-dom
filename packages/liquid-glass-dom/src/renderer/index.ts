@@ -26,11 +26,18 @@ import {
   type GpuStructDefinition,
 } from './gpu-layout'
 import {
+  createAdaptiveBlurTargetChain,
   copyTextureRegion,
   createRenderTarget,
   destroyTargets,
   type RenderTargetSet,
 } from './gpu-targets'
+import {
+  createAdaptiveBlurResources,
+  destroyAdaptiveBlurResources,
+  renderAdaptiveBlur,
+  type AdaptiveBlurResources,
+} from './adaptive-blur'
 import {
   BACKDROP_METRICS_BYTES_PER_ROW,
   BACKDROP_METRICS_SIZE,
@@ -41,7 +48,6 @@ import {
 } from './metrics'
 import {
   BackdropMetricsBoundsLayout,
-  BlurParamsLayout,
   GlobalsLayout,
   HtmlCompositeParamsLayout,
   ShapeDataLayout,
@@ -54,8 +60,6 @@ import {
 } from './scene-order'
 import { Container, Html, Scene } from '../scene'
 import {
-  BLUR_SHADER,
-  DISPLACEMENT_FIELD_BLUR_SHADER,
   DISPLACEMENT_FIELD_SHADER,
   GLASS_SHADER,
   HTML_COMPOSITE_SHADER,
@@ -81,7 +85,6 @@ type PackedShapesResult = {
 
 type GlobalsBuffer = GpuStructBuffer<GpuStructDefinition<typeof GlobalsLayout>>
 type ShapeDataBuffer = GpuStructArrayBuffer<GpuStructDefinition<typeof ShapeDataLayout>>
-type BlurParamsBuffer = GpuStructBuffer<GpuStructDefinition<typeof BlurParamsLayout>>
 type BackdropMetricsBoundsBuffer = GpuStructBuffer<GpuStructDefinition<typeof BackdropMetricsBoundsLayout>>
 type HtmlCompositeParamsBuffer = GpuStructBuffer<GpuStructDefinition<typeof HtmlCompositeParamsLayout>>
 const DISPLACEMENT_FIELD_FORMAT = 'rgba16float' satisfies GPUTextureFormat
@@ -131,16 +134,12 @@ export class Renderer {
   private presentationFormat: GPUTextureFormat | null = null
   private globalsBuffer: GlobalsBuffer | null = null
   private shapesBuffer: ShapeDataBuffer | null = null
-  private blurHorizontalBuffer: BlurParamsBuffer | null = null
-  private blurVerticalBuffer: BlurParamsBuffer | null = null
-  private displacementBlurHorizontalBuffer: BlurParamsBuffer | null = null
-  private displacementBlurVerticalBuffer: BlurParamsBuffer | null = null
   private backdropMetricsBoundsBuffer: BackdropMetricsBoundsBuffer | null = null
   private htmlCompositeParamsBuffer: HtmlCompositeParamsBuffer | null = null
   private sampler: GPUSampler | null = null
-  private blurPipeline: GPURenderPipeline | null = null
+  private backdropBlurResources: AdaptiveBlurResources | null = null
+  private displacementBlurResources: AdaptiveBlurResources | null = null
   private displacementFieldPipeline: GPURenderPipeline | null = null
-  private displacementFieldBlurPipeline: GPURenderPipeline | null = null
   private glassPipeline: GPURenderPipeline | null = null
   private htmlCompositePipeline: GPURenderPipeline | null = null
   private backdropMetricsPipeline: GPURenderPipeline | null = null
@@ -259,10 +258,10 @@ export class Renderer {
     this.backdropMetricsTarget = null
     this.globalsBuffer?.destroy()
     this.shapesBuffer?.destroy()
-    this.blurHorizontalBuffer?.destroy()
-    this.blurVerticalBuffer?.destroy()
-    this.displacementBlurHorizontalBuffer?.destroy()
-    this.displacementBlurVerticalBuffer?.destroy()
+    destroyAdaptiveBlurResources(this.backdropBlurResources)
+    destroyAdaptiveBlurResources(this.displacementBlurResources)
+    this.backdropBlurResources = null
+    this.displacementBlurResources = null
     this.backdropMetricsBoundsBuffer?.destroy()
     this.htmlCompositeParamsBuffer?.destroy()
     this.backdropMetrics.destroy()
@@ -298,28 +297,10 @@ export class Renderer {
     const uniformBufferUsage = GPU_BUFFER_USAGE.UNIFORM | GPU_BUFFER_USAGE.COPY_DST
 
     const globalsBuffer = new GpuStructBuffer(device, GlobalsLayout, uniformBufferUsage)
-    const blurHorizontalBuffer = new GpuStructBuffer(device, BlurParamsLayout, uniformBufferUsage)
-    const blurVerticalBuffer = new GpuStructBuffer(device, BlurParamsLayout, uniformBufferUsage)
-    const displacementBlurHorizontalBuffer = new GpuStructBuffer(device, BlurParamsLayout, uniformBufferUsage)
-    const displacementBlurVerticalBuffer = new GpuStructBuffer(device, BlurParamsLayout, uniformBufferUsage)
     const backdropMetricsBoundsBuffer = new GpuStructBuffer(device, BackdropMetricsBoundsLayout, uniformBufferUsage)
     const htmlCompositeParamsBuffer = new GpuStructBuffer(device, HtmlCompositeParamsLayout, uniformBufferUsage)
-
-    const blurPipeline = device.createRenderPipeline({
-      layout: 'auto',
-      vertex: {
-        module: device.createShaderModule({ code: BLUR_SHADER }),
-        entryPoint: 'vertexMain',
-      },
-      fragment: {
-        module: device.createShaderModule({ code: BLUR_SHADER }),
-        entryPoint: 'fragmentMain',
-        targets: [{ format: presentationFormat }],
-      },
-      primitive: {
-        topology: 'triangle-list',
-      },
-    })
+    const backdropBlurResources = createAdaptiveBlurResources(device, presentationFormat)
+    const displacementBlurResources = createAdaptiveBlurResources(device, DISPLACEMENT_FIELD_FORMAT)
 
     const displacementFieldPipeline = device.createRenderPipeline({
       layout: 'auto',
@@ -329,22 +310,6 @@ export class Renderer {
       },
       fragment: {
         module: device.createShaderModule({ code: DISPLACEMENT_FIELD_SHADER }),
-        entryPoint: 'fragmentMain',
-        targets: [{ format: DISPLACEMENT_FIELD_FORMAT }],
-      },
-      primitive: {
-        topology: 'triangle-list',
-      },
-    })
-
-    const displacementFieldBlurPipeline = device.createRenderPipeline({
-      layout: 'auto',
-      vertex: {
-        module: device.createShaderModule({ code: DISPLACEMENT_FIELD_BLUR_SHADER }),
-        entryPoint: 'vertexMain',
-      },
-      fragment: {
-        module: device.createShaderModule({ code: DISPLACEMENT_FIELD_BLUR_SHADER }),
         entryPoint: 'fragmentMain',
         targets: [{ format: DISPLACEMENT_FIELD_FORMAT }],
       },
@@ -416,15 +381,11 @@ export class Renderer {
     this.presentationFormat = presentationFormat
     this.sampler = sampler
     this.globalsBuffer = globalsBuffer
-    this.blurHorizontalBuffer = blurHorizontalBuffer
-    this.blurVerticalBuffer = blurVerticalBuffer
-    this.displacementBlurHorizontalBuffer = displacementBlurHorizontalBuffer
-    this.displacementBlurVerticalBuffer = displacementBlurVerticalBuffer
     this.backdropMetricsBoundsBuffer = backdropMetricsBoundsBuffer
     this.htmlCompositeParamsBuffer = htmlCompositeParamsBuffer
-    this.blurPipeline = blurPipeline
+    this.backdropBlurResources = backdropBlurResources
+    this.displacementBlurResources = displacementBlurResources
     this.displacementFieldPipeline = displacementFieldPipeline
-    this.displacementFieldBlurPipeline = displacementFieldBlurPipeline
     this.glassPipeline = glassPipeline
     this.htmlCompositePipeline = htmlCompositePipeline
     this.backdropMetricsPipeline = backdropMetricsPipeline
@@ -466,10 +427,8 @@ export class Renderer {
       this.targetCanvas.height = nextHeight
       destroyTargets(this.targets)
       this.targets = {
-        blurPing: createRenderTarget(this.device, this.presentationFormat, nextWidth, nextHeight),
-        blur: createRenderTarget(this.device, this.presentationFormat, nextWidth, nextHeight),
-        displacementPing: createRenderTarget(this.device, DISPLACEMENT_FIELD_FORMAT, nextWidth, nextHeight),
-        displacement: createRenderTarget(this.device, DISPLACEMENT_FIELD_FORMAT, nextWidth, nextHeight),
+        backdropBlur: createAdaptiveBlurTargetChain(this.device, this.presentationFormat, nextWidth, nextHeight),
+        displacementBlur: createAdaptiveBlurTargetChain(this.device, DISPLACEMENT_FIELD_FORMAT, nextWidth, nextHeight),
         sceneA: createRenderTarget(this.device, this.presentationFormat, nextWidth, nextHeight),
         sceneB: createRenderTarget(this.device, this.presentationFormat, nextWidth, nextHeight),
       }
@@ -605,52 +564,6 @@ export class Renderer {
     })
   }
 
-  /** Writes blur direction and radius uniforms for a container. */
-  private writeBlurParams(container: Container) {
-    if (!this.device || !this.blurHorizontalBuffer || !this.blurVerticalBuffer) {
-      return
-    }
-
-    const blurRadius = container.blur * this.currentDpr
-    this.blurHorizontalBuffer.write({
-      params: {
-        directionX: 1,
-        directionY: 0,
-        radius: blurRadius,
-      },
-    })
-    this.blurVerticalBuffer.write({
-      params: {
-        directionX: 0,
-        directionY: 1,
-        radius: blurRadius,
-      },
-    })
-  }
-
-  /** Writes blur uniforms for the premultiplied displacement-field filter. */
-  private writeDisplacementBlurParams(container: Container) {
-    if (!this.device || !this.displacementBlurHorizontalBuffer || !this.displacementBlurVerticalBuffer) {
-      return
-    }
-
-    const blurRadius = Math.max(container.displacementBlur * this.currentDpr, 0)
-    this.displacementBlurHorizontalBuffer.write({
-      params: {
-        directionX: 1,
-        directionY: 0,
-        radius: blurRadius,
-      },
-    })
-    this.displacementBlurVerticalBuffer.write({
-      params: {
-        directionX: 0,
-        directionY: 1,
-        radius: blurRadius,
-      },
-    })
-  }
-
   /** Writes the device-pixel bounds sampled by the backdrop metrics pass. */
   private writeBackdropMetricsBounds(bounds: BoundsRect) {
     if (!this.device || !this.backdropMetricsBoundsBuffer) {
@@ -733,60 +646,21 @@ export class Renderer {
     }
   }
 
-  /** Runs the separable blur passes for one container backdrop. */
-  private blurTexture(encoder: GPUCommandEncoder, source: GPUTexture, targetContainer: Container) {
-    if (
-      !this.device ||
-      !this.sampler ||
-      !this.blurPipeline ||
-      !this.blurHorizontalBuffer ||
-      !this.blurVerticalBuffer ||
-      !this.targets
-    ) {
-      return
-    }
-
-    this.writeBlurParams(targetContainer)
-
-    const horizontalBindGroup = createPipelineBindGroup(this.device, this.blurPipeline, [
-      { binding: 0, resource: this.sampler },
-      { binding: 1, resource: source.createView() },
-      { binding: 2, resource: this.blurHorizontalBuffer.bindingResource },
-    ])
-    drawFullscreenPass(encoder, {
-      pipeline: this.blurPipeline,
-      bindGroup: horizontalBindGroup,
-      target: this.targets.blurPing,
-    })
-
-    const verticalBindGroup = createPipelineBindGroup(this.device, this.blurPipeline, [
-      { binding: 0, resource: this.sampler },
-      { binding: 1, resource: this.targets.blurPing.createView() },
-      { binding: 2, resource: this.blurVerticalBuffer.bindingResource },
-    ])
-    drawFullscreenPass(encoder, {
-      pipeline: this.blurPipeline,
-      bindGroup: verticalBindGroup,
-      target: this.targets.blur,
-    })
-  }
-
   /** Renders and filters the premultiplied surface field used for refraction displacement. */
   private renderDisplacementField(encoder: GPUCommandEncoder, targetContainer: Container) {
     if (
       !this.device ||
       !this.sampler ||
       !this.displacementFieldPipeline ||
-      !this.displacementFieldBlurPipeline ||
+      !this.displacementBlurResources ||
       !this.globalsBuffer ||
       !this.shapesBuffer?.buffer ||
-      !this.displacementBlurHorizontalBuffer ||
-      !this.displacementBlurVerticalBuffer ||
       !this.targets
     ) {
-      return
+      return null
     }
 
+    const rawLevel = this.targets.displacementBlur.levels[0]
     const fieldBindGroup = createPipelineBindGroup(this.device, this.displacementFieldPipeline, [
       { binding: 0, resource: this.globalsBuffer.bindingResource },
       { binding: 1, resource: this.shapesBuffer.bindingResource },
@@ -794,34 +668,18 @@ export class Renderer {
     drawFullscreenPass(encoder, {
       pipeline: this.displacementFieldPipeline,
       bindGroup: fieldBindGroup,
-      target: this.targets.displacement,
+      target: rawLevel.ping,
       clearValue: { r: 0, g: 0, b: 0, a: 0 },
     })
 
-    this.writeDisplacementBlurParams(targetContainer)
-
-    const horizontalBindGroup = createPipelineBindGroup(this.device, this.displacementFieldBlurPipeline, [
-      { binding: 0, resource: this.sampler },
-      { binding: 1, resource: this.targets.displacement.createView() },
-      { binding: 2, resource: this.displacementBlurHorizontalBuffer.bindingResource },
-    ])
-    drawFullscreenPass(encoder, {
-      pipeline: this.displacementFieldBlurPipeline,
-      bindGroup: horizontalBindGroup,
-      target: this.targets.displacementPing,
-      clearValue: { r: 0, g: 0, b: 0, a: 0 },
-    })
-
-    const verticalBindGroup = createPipelineBindGroup(this.device, this.displacementFieldBlurPipeline, [
-      { binding: 0, resource: this.sampler },
-      { binding: 1, resource: this.targets.displacementPing.createView() },
-      { binding: 2, resource: this.displacementBlurVerticalBuffer.bindingResource },
-    ])
-    drawFullscreenPass(encoder, {
-      pipeline: this.displacementFieldBlurPipeline,
-      bindGroup: verticalBindGroup,
-      target: this.targets.displacement,
-      clearValue: { r: 0, g: 0, b: 0, a: 0 },
+    return renderAdaptiveBlur({
+      device: this.device,
+      sampler: this.sampler,
+      encoder,
+      source: rawLevel.ping,
+      radiusPx: targetContainer.displacementBlur * this.currentDpr,
+      chain: this.targets.displacementBlur,
+      resources: this.displacementBlurResources,
     })
   }
 
@@ -830,6 +688,7 @@ export class Renderer {
     encoder: GPUCommandEncoder,
     state: BackdropMetricsState,
     bounds: BoundsRect | null,
+    blurredBackdrop: GPUTexture,
   ) {
     if (
       !this.device ||
@@ -860,7 +719,7 @@ export class Renderer {
       { binding: 0, resource: this.globalsBuffer.bindingResource },
       { binding: 1, resource: this.shapesBuffer.bindingResource },
       { binding: 2, resource: this.sampler },
-      { binding: 3, resource: this.targets.blur.createView() },
+      { binding: 3, resource: blurredBackdrop.createView() },
       { binding: 4, resource: this.backdropMetricsBoundsBuffer.bindingResource },
     ])
     drawFullscreenPass(encoder, {
@@ -891,6 +750,8 @@ export class Renderer {
   private renderContainer(
     encoder: GPUCommandEncoder,
     sharpSource: GPUTexture,
+    blurredBackdrop: GPUTexture,
+    displacementField: GPUTexture,
     target: GPUTexture,
   ) {
     if (
@@ -918,10 +779,10 @@ export class Renderer {
       { binding: 1, resource: this.shapesBuffer.bindingResource },
       { binding: 2, resource: this.sampler },
       { binding: 3, resource: sharpSource.createView() },
-      { binding: 4, resource: this.targets.blur.createView() },
+      { binding: 4, resource: blurredBackdrop.createView() },
       { binding: 5, resource: contentTexture.createView() },
       { binding: 6, resource: contentEntriesBindingResource },
-      { binding: 7, resource: this.targets.displacement.createView() },
+      { binding: 7, resource: displacementField.createView() },
     ])
     drawFullscreenPass(encoder, {
       pipeline: this.glassPipeline,
@@ -1050,12 +911,13 @@ export class Renderer {
       this.destroyed ||
       !this.device ||
       !this.context ||
+      !this.sampler ||
       !this.targets ||
       !this.glassPipeline ||
       !this.displacementFieldPipeline ||
-      !this.displacementFieldBlurPipeline ||
-      !this.htmlCompositePipeline ||
-      !this.blurPipeline
+      !this.backdropBlurResources ||
+      !this.displacementBlurResources ||
+      !this.htmlCompositePipeline
     ) {
       return
     }
@@ -1077,18 +939,34 @@ export class Renderer {
 
       const packedShapes = this.packShapes(entry.child, entry.transform)
       this.writeGlobals(entry.child, packedShapes.shapeCount)
-      this.blurTexture(composer.encoder, composer.current, entry.child)
-      this.renderDisplacementField(composer.encoder, entry.child)
+      const blurredBackdrop = renderAdaptiveBlur({
+        device: this.device,
+        sampler: this.sampler,
+        encoder: composer.encoder,
+        source: composer.current,
+        radiusPx: entry.child.blur * this.currentDpr,
+        chain: this.targets.backdropBlur,
+        resources: this.backdropBlurResources,
+      })
+      const displacementField = this.renderDisplacementField(composer.encoder, entry.child)
+      if (!displacementField) {
+        continue
+      }
 
       const metricsState = this.backdropMetrics.getTrackedState(entry.child)
       let scheduledMetricsReadback = false
 
       if (metricsState) {
         seenContainers.add(entry.child)
-        scheduledMetricsReadback = this.renderBackdropMetrics(composer.encoder, metricsState, packedShapes.bounds)
+        scheduledMetricsReadback = this.renderBackdropMetrics(
+          composer.encoder,
+          metricsState,
+          packedShapes.bounds,
+          blurredBackdrop,
+        )
       }
 
-      this.renderContainer(composer.encoder, composer.current, composer.next)
+      this.renderContainer(composer.encoder, composer.current, blurredBackdrop, displacementField, composer.next)
       composer.submitAndSwap()
 
       if (metricsState && scheduledMetricsReadback) {

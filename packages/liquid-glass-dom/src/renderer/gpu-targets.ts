@@ -1,11 +1,23 @@
 import { GPU_TEXTURE_USAGE } from './gpu-constants'
 
+/** One resolution level in an adaptive blur chain. */
+export type AdaptiveBlurTargetLevel = {
+  ping: GPUTexture
+  pong: GPUTexture
+  width: number
+  height: number
+}
+
+/** Full mip-like render target chain used by adaptive multi-resolution blur. */
+export type AdaptiveBlurTargetChain = {
+  format: GPUTextureFormat
+  levels: AdaptiveBlurTargetLevel[]
+}
+
 /** Texture set used by blur passes and scene ping-pong composition. */
 export type RenderTargetSet = {
-  blurPing: GPUTexture
-  blur: GPUTexture
-  displacementPing: GPUTexture
-  displacement: GPUTexture
+  backdropBlur: AdaptiveBlurTargetChain
+  displacementBlur: AdaptiveBlurTargetChain
   sceneA: GPUTexture
   sceneB: GPUTexture
 }
@@ -42,16 +54,59 @@ export function createRenderTarget(
   })
 }
 
+/** Creates a full-size-to-1px texture chain for adaptive blur. */
+export function createAdaptiveBlurTargetChain(
+  device: GPUDevice,
+  format: GPUTextureFormat,
+  width: number,
+  height: number,
+): AdaptiveBlurTargetChain {
+  const levels: AdaptiveBlurTargetLevel[] = []
+  let levelWidth = Math.max(Math.floor(width), 1)
+  let levelHeight = Math.max(Math.floor(height), 1)
+
+  while (true) {
+    levels.push({
+      ping: createRenderTarget(device, format, levelWidth, levelHeight),
+      pong: createRenderTarget(device, format, levelWidth, levelHeight),
+      width: levelWidth,
+      height: levelHeight,
+    })
+
+    if (levelWidth === 1 && levelHeight === 1) {
+      break
+    }
+
+    levelWidth = Math.max(Math.ceil(levelWidth / 2), 1)
+    levelHeight = Math.max(Math.ceil(levelHeight / 2), 1)
+  }
+
+  return {
+    format,
+    levels,
+  }
+}
+
+/** Destroys every texture in one adaptive blur chain. */
+export function destroyAdaptiveBlurTargetChain(chain: AdaptiveBlurTargetChain | null | undefined) {
+  if (!chain) {
+    return
+  }
+
+  for (const level of chain.levels) {
+    level.ping.destroy()
+    level.pong.destroy()
+  }
+}
+
 /** Destroys every texture in a render target set. */
 export function destroyTargets(targets: RenderTargetSet | null) {
   if (!targets) {
     return
   }
 
-  targets.blurPing.destroy()
-  targets.blur.destroy()
-  targets.displacementPing.destroy()
-  targets.displacement.destroy()
+  destroyAdaptiveBlurTargetChain(targets.backdropBlur)
+  destroyAdaptiveBlurTargetChain(targets.displacementBlur)
   targets.sceneA.destroy()
   targets.sceneB.destroy()
 }
