@@ -9,8 +9,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "liquid-glass-dom": "workspace:*",
-    "liquid-glass-three": "workspace:*",
+    "@liquid-dom/core": "workspace:*",
+    "@liquid-dom/three": "workspace:*",
     "three": "^0.184.0"
   },
   "devDependencies": {

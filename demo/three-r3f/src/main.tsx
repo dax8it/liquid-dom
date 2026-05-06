@@ -9,7 +9,7 @@ import {
   useFrame,
   type ThreeToJSXElements,
 } from '@react-three/fiber'
-import { LiquidGlassR3F } from 'liquid-glass-r3f'
+import { LiquidGlassR3F } from '@liquid-dom/r3f'
 import {
   Frame,
   Glass,
@@ -17,7 +17,7 @@ import {
   Html,
   Transform,
   ZStack,
-} from 'liquid-glass-react'
+} from '@liquid-dom/react'
 
 declare module '@react-three/fiber' {
   interface ThreeElements extends ThreeToJSXElements<typeof THREE> {}

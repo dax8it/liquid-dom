@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { useControls } from 'leva'
-import { Container, Glass, Html, Renderer, Scene } from 'liquid-glass-dom'
+import { Container, Glass, Html, Renderer, Scene } from '@liquid-dom/core'
 
 const INITIAL_GLASS_WIDTH = 320
 const INITIAL_SCENE_HTML_WIDTH = 260

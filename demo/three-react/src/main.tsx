@@ -20,7 +20,7 @@ import {
   UnsignedByteType,
   WebGPURenderer,
 } from 'three/webgpu'
-import { WebGpuDomContentSource } from 'liquid-glass-dom'
+import { WebGpuDomContentSource } from '@liquid-dom/core'
 import {
   Frame,
   Glass,
@@ -30,8 +30,8 @@ import {
   Transform,
   ZStack,
   type LayoutSceneRootRef,
-} from 'liquid-glass-react'
-import { ThreeGlassRenderer } from 'liquid-glass-three'
+} from '@liquid-dom/react'
+import { ThreeGlassRenderer } from '@liquid-dom/three'
 
 const GLASS_WIDTH = 260
 const GLASS_HEIGHT = 148
@@ -245,7 +245,7 @@ function useThreeIntegration(
         stencilBuffer: false,
         samples: 0,
       })
-      backgroundTarget.texture.name = 'liquid-glass-three-react-backdrop'
+      backgroundTarget.texture.name = '@liquid-dom/three-react-backdrop'
 
       const threeScene = createThreeScene()
       const camera = new PerspectiveCamera(45, 1, 0.1, 100)

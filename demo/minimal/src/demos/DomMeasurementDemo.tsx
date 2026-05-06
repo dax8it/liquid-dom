@@ -13,7 +13,7 @@ import {
   useFrame,
   useLayoutScene,
   type HtmlRef,
-} from 'liquid-glass-react'
+} from '@liquid-dom/react'
 
 type ProbeId = 'intrinsic' | 'proposal' | 'fixedWidth' | 'mutation' | 'replacement'
 type ProbeMetrics = Record<ProbeId, { width: number; height: number }>

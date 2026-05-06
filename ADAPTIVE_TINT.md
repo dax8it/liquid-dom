@@ -1,6 +1,6 @@
 # Adaptive Tint with the Metrics API
 
-This document describes one practical way to implement adaptive glass tint on top of the `liquid-glass-dom` metrics API.
+This document describes one practical way to implement adaptive glass tint on top of the `@liquid-dom/core` metrics API.
 
 The goal is straightforward:
 
@@ -72,7 +72,7 @@ You may still choose a different metric depending on the look you want:
 Enable tracking for any container whose backdrop metrics you want to read:
 
 ```ts
-import { Container, Renderer } from 'liquid-glass-dom'
+import { Container, Renderer } from '@liquid-dom/core'
 
 const renderer = new Renderer()
 const container = new Container()
@@ -91,7 +91,7 @@ renderer.setBackdropMetricsTracking(container, false)
 This example assumes your app already has its own frame loop or update loop.
 
 ```ts
-import type { BackdropMetrics, Container, RgbaColor, Renderer } from 'liquid-glass-dom'
+import type { BackdropMetrics, Container, RgbaColor, Renderer } from '@liquid-dom/core'
 
 type AdaptiveTintState = {
   currentBrightness: number

@@ -6,7 +6,7 @@ import {
   type GlassPointerEvent,
   Renderer,
   Scene,
-} from 'liquid-glass-dom'
+} from '@liquid-dom/core'
 import { MAX_LOG_ROWS, formatPointerEvent, type EventRow, type LiveState } from './shared'
 
 export default function PointerEventsDemo() {

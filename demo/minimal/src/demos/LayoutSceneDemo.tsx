@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { useControls } from 'leva'
-import { Renderer } from 'liquid-glass-dom'
+import { Renderer } from '@liquid-dom/core'
 import {
   Background,
   Frame,
@@ -15,7 +15,7 @@ import {
   Transform,
   VStack,
   ZStack,
-} from 'liquid-glass-dom/layout'
+} from '@liquid-dom/core/layout'
 
 const SURFACE_WIDTH = 720
 const SURFACE_HEIGHT = 430

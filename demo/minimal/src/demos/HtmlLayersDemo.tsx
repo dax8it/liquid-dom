@@ -1,5 +1,5 @@
 import { startTransition, useEffect, useRef, useState } from 'react'
-import { Container, Glass, Html, Renderer, Scene } from 'liquid-glass-dom'
+import { Container, Glass, Html, Renderer, Scene } from '@liquid-dom/core'
 
 export default function HtmlLayersDemo() {
   const stageRef = useRef<HTMLDivElement | null>(null)

@@ -3,13 +3,13 @@ import react from '@vitejs/plugin-react'
 import { fileURLToPath, URL } from 'node:url'
 
 const liquidGlassDomDist = fileURLToPath(
-  new URL('../../packages/liquid-glass-dom/dist', import.meta.url),
+  new URL('../../packages/core/dist', import.meta.url),
 )
 
 export default defineConfig({
   plugins: [react()],
   optimizeDeps: {
-    exclude: ['liquid-glass-dom'],
+    exclude: ['@liquid-dom/core'],
   },
   server: {
     watch: {

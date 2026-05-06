@@ -10,12 +10,12 @@ importers:
 
   demo/editor:
     dependencies:
+      '@liquid-dom/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       leva:
         specifier: ^0.10.1
         version: 0.10.1(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
-      liquid-glass-dom:
-        specifier: workspace:*
-        version: link:../../packages/liquid-glass-dom
       react:
         specifier: ^19.2.4
         version: 19.2.5
@@ -71,15 +71,15 @@ importers:
 
   demo/minimal:
     dependencies:
+      '@liquid-dom/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@liquid-dom/react':
+        specifier: workspace:*
+        version: link:../../packages/react
       leva:
         specifier: ^0.10.1
         version: 0.10.1(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
-      liquid-glass-dom:
-        specifier: workspace:*
-        version: link:../../packages/liquid-glass-dom
-      liquid-glass-react:
-        specifier: workspace:*
-        version: link:../../packages/liquid-glass-react
       react:
         specifier: ^19.2.4
         version: 19.2.5
@@ -111,12 +111,12 @@ importers:
 
   demo/three:
     dependencies:
-      liquid-glass-dom:
+      '@liquid-dom/core':
         specifier: workspace:*
-        version: link:../../packages/liquid-glass-dom
-      liquid-glass-three:
+        version: link:../../packages/core
+      '@liquid-dom/three':
         specifier: workspace:*
-        version: link:../../packages/liquid-glass-three
+        version: link:../../packages/three
       three:
         specifier: ^0.184.0
         version: 0.184.0
@@ -139,21 +139,21 @@ importers:
 
   demo/three-r3f:
     dependencies:
+      '@liquid-dom/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@liquid-dom/r3f':
+        specifier: workspace:*
+        version: link:../../packages/r3f
+      '@liquid-dom/react':
+        specifier: workspace:*
+        version: link:../../packages/react
+      '@liquid-dom/three':
+        specifier: workspace:*
+        version: link:../../packages/three
       '@react-three/fiber':
         specifier: ^9.6.1
         version: 9.6.1(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(three@0.184.0)
-      liquid-glass-dom:
-        specifier: workspace:*
-        version: link:../../packages/liquid-glass-dom
-      liquid-glass-r3f:
-        specifier: workspace:*
-        version: link:../../packages/liquid-glass-r3f
-      liquid-glass-react:
-        specifier: workspace:*
-        version: link:../../packages/liquid-glass-react
-      liquid-glass-three:
-        specifier: workspace:*
-        version: link:../../packages/liquid-glass-three
       react:
         specifier: ^19.2.4
         version: 19.2.5
@@ -191,15 +191,15 @@ importers:
 
   demo/three-react:
     dependencies:
-      liquid-glass-dom:
+      '@liquid-dom/core':
         specifier: workspace:*
-        version: link:../../packages/liquid-glass-dom
-      liquid-glass-react:
+        version: link:../../packages/core
+      '@liquid-dom/react':
         specifier: workspace:*
-        version: link:../../packages/liquid-glass-react
-      liquid-glass-three:
+        version: link:../../packages/react
+      '@liquid-dom/three':
         specifier: workspace:*
-        version: link:../../packages/liquid-glass-three
+        version: link:../../packages/three
       react:
         specifier: ^19.2.4
         version: 19.2.5
@@ -235,7 +235,29 @@ importers:
         specifier: ^8.0.4
         version: 8.0.10(@types/node@24.12.2)(esbuild@0.27.7)(jiti@2.6.1)
 
-  packages/laymeout:
+  packages/core:
+    dependencies:
+      '@liquid-dom/layout':
+        specifier: workspace:*
+        version: link:../layout
+    devDependencies:
+      '@webgpu/types':
+        specifier: ^0.1.69
+        version: 0.1.69
+      jsdom:
+        specifier: ^27.2.0
+        version: 27.4.0
+      tsup:
+        specifier: ^8.5.0
+        version: 8.5.1(jiti@2.6.1)(postcss@8.5.12)(typescript@6.0.2)
+      typescript:
+        specifier: ~6.0.2
+        version: 6.0.2
+      vitest:
+        specifier: ^4.0.15
+        version: 4.1.5(@types/node@25.6.0)(jsdom@27.4.0)(vite@8.0.10(@types/node@25.6.0)(esbuild@0.27.7)(jiti@2.6.1))
+
+  packages/layout:
     devDependencies:
       '@types/node':
         specifier: ^25.0.0
@@ -268,39 +290,17 @@ importers:
         specifier: ^4.0.15
         version: 4.1.5(@types/node@25.6.0)(jsdom@27.4.0)(vite@8.0.10(@types/node@25.6.0)(esbuild@0.27.7)(jiti@2.6.1))
 
-  packages/liquid-glass-dom:
+  packages/r3f:
     dependencies:
-      laymeout:
+      '@liquid-dom/core':
         specifier: workspace:*
-        version: link:../laymeout
-    devDependencies:
-      '@webgpu/types':
-        specifier: ^0.1.69
-        version: 0.1.69
-      jsdom:
-        specifier: ^27.2.0
-        version: 27.4.0
-      tsup:
-        specifier: ^8.5.0
-        version: 8.5.1(jiti@2.6.1)(postcss@8.5.12)(typescript@6.0.2)
-      typescript:
-        specifier: ~6.0.2
-        version: 6.0.2
-      vitest:
-        specifier: ^4.0.15
-        version: 4.1.5(@types/node@25.6.0)(jsdom@27.4.0)(vite@8.0.10(@types/node@25.6.0)(esbuild@0.27.7)(jiti@2.6.1))
-
-  packages/liquid-glass-r3f:
-    dependencies:
-      liquid-glass-dom:
+        version: link:../core
+      '@liquid-dom/react':
         specifier: workspace:*
-        version: link:../liquid-glass-dom
-      liquid-glass-react:
+        version: link:../react
+      '@liquid-dom/three':
         specifier: workspace:*
-        version: link:../liquid-glass-react
-      liquid-glass-three:
-        specifier: workspace:*
-        version: link:../liquid-glass-three
+        version: link:../three
     devDependencies:
       '@react-three/fiber':
         specifier: ^9.6.1
@@ -327,14 +327,14 @@ importers:
         specifier: ~6.0.2
         version: 6.0.2
 
-  packages/liquid-glass-react:
+  packages/react:
     dependencies:
-      laymeout:
+      '@liquid-dom/core':
         specifier: workspace:*
-        version: link:../laymeout
-      liquid-glass-dom:
+        version: link:../core
+      '@liquid-dom/layout':
         specifier: workspace:*
-        version: link:../liquid-glass-dom
+        version: link:../layout
     devDependencies:
       '@types/react':
         specifier: ^19.2.14
@@ -364,11 +364,11 @@ importers:
         specifier: ^4.0.15
         version: 4.1.5(@types/node@25.6.0)(jsdom@27.4.0)(vite@8.0.10(@types/node@25.6.0)(esbuild@0.27.7)(jiti@2.6.1))
 
-  packages/liquid-glass-three:
+  packages/three:
     dependencies:
-      liquid-glass-dom:
+      '@liquid-dom/core':
         specifier: workspace:*
-        version: link:../liquid-glass-dom
+        version: link:../core
     devDependencies:
       '@types/three':
         specifier: ^0.184.0

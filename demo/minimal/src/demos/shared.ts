@@ -1,4 +1,4 @@
-import type { GlassPointerEvent } from 'liquid-glass-dom'
+import type { GlassPointerEvent } from '@liquid-dom/core'
 
 export type DemoTab = 'tiny' | 'sdf-overlap' | 'layout-simple' | 'animation' | 'dom-measurement' | 'layout' | 'pointer' | 'html'
 

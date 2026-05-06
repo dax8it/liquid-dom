@@ -18,8 +18,8 @@ import {
   UnsignedByteType,
   WebGPURenderer,
 } from 'three/webgpu'
-import { Container, Glass, Html, Scene as GlassScene, WebGpuDomContentSource } from 'liquid-glass-dom'
-import { ThreeGlassRenderer } from 'liquid-glass-three'
+import { Container, Glass, Html, Scene as GlassScene, WebGpuDomContentSource } from '@liquid-dom/core'
+import { ThreeGlassRenderer } from '@liquid-dom/three'
 
 const canvas = document.querySelector<HTMLCanvasElement>('#scene')
 const blurInput = document.querySelector<HTMLInputElement>('#blur')
@@ -141,7 +141,7 @@ async function main() {
     stencilBuffer: false,
     samples: 0,
   })
-  backgroundTarget.texture.name = 'liquid-glass-three-backdrop'
+  backgroundTarget.texture.name = '@liquid-dom/three-backdrop'
 
   const threeScene = new ThreeScene()
   threeScene.background = new Color(0x171126)

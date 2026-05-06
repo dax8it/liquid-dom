@@ -11,7 +11,7 @@ import {
   type Point,
   type SpecularWidth,
   type SurfaceProfile,
-} from 'liquid-glass-dom'
+} from '@liquid-dom/core'
 import {
   EditorBackdrop,
   type AdaptiveTintSettings,
