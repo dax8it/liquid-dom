@@ -1,0 +1,340 @@
+import { useEffect, useRef, useState, type RefObject } from 'react'
+import { useDrag } from '@use-gesture/react'
+import type { GlassPointerEvent } from '@liquid-dom/core'
+import {
+  Frame,
+  Glass,
+  GlassContainer,
+  Html,
+  LayoutCanvas,
+  Overlay,
+  spring,
+  Transform,
+  useAnimate,
+  useFrame,
+  useInvalidateFrame,
+  useRenderer,
+  ZStack,
+  type AnimationControls,
+  type GlassProps,
+  type TransformRef,
+} from '@liquid-dom/react'
+import abstractShapesUrl from '../assets/Abstract Shapes.jpg'
+import styles from './IosNotificationDemo.module.css'
+
+const NOTIFICATION_WIDTH = 616
+const NOTIFICATION_HEIGHT = 112
+const ACTION_WIDTH = 134
+const ACTION_HEIGHT = 112
+const ACTION_GAP = 18
+const OPTIONS_X = NOTIFICATION_WIDTH / 2 - ACTION_WIDTH * 1.5 - ACTION_GAP
+const CLEAR_X = OPTIONS_X + ACTION_WIDTH + ACTION_GAP
+const OPEN_OFFSET = OPTIONS_X - ACTION_WIDTH / 2 - ACTION_GAP - NOTIFICATION_WIDTH / 2
+const NOTIFICATION_CORNER_RADIUS = 41
+const ACTION_CORNER_RADIUS = 39
+const ACTION_HOVER_SCALE = 1.035
+const ACTION_PRESS_SCALE = 0.96
+const ACTION_SCALE_TRANSITION = spring({ stiffness: 520, damping: 42 })
+const NOTIFICATION_OFFSET_TRANSITION = spring({ stiffness: 520, damping: 44 })
+const NOTIFICATION_RUBBERBAND = 0.18
+const NOTIFICATION_ORIGIN = {
+  x: NOTIFICATION_WIDTH / 2,
+  y: NOTIFICATION_HEIGHT / 2,
+}
+
+type GlassDragBind = Pick<GlassProps, 'onPointerDown' | 'onPointerMove' | 'onPointerUp' | 'onPointerCancel'>
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max)
+}
+
+function getActionOpacity(actionX: number, notificationOffset: number) {
+  const notificationRightEdge = notificationOffset + NOTIFICATION_WIDTH / 2
+  const actionRightEdge = actionX + ACTION_WIDTH / 2
+
+  return clamp((actionRightEdge - notificationRightEdge) / ACTION_WIDTH, 0, 1)
+}
+
+export default function IosNotificationDemo() {
+  return (
+    <section className={styles.root}>
+      <LayoutCanvas
+        className={styles.canvasShell}
+        canvasClassName={styles.canvas}
+      >
+        <NotificationScene />
+      </LayoutCanvas>
+    </section>
+  )
+}
+
+function NotificationScene() {
+  const renderer = useRenderer()
+  const invalidateFrame = useInvalidateFrame()
+  const animate = useAnimate()
+  const notificationTransformRef = useRef<TransformRef | null>(null)
+  const optionsLabelRef = useRef<HTMLDivElement | null>(null)
+  const clearLabelRef = useRef<HTMLDivElement | null>(null)
+  const offsetRef = useRef(0)
+  const draggingRef = useRef(false)
+  const notificationHoveredRef = useRef(false)
+  const offsetAnimationRef = useRef<AnimationControls | null>(null)
+  const offsetAnimatingRef = useRef(false)
+
+  function updateActionLabels(notificationOffset: number) {
+    if (optionsLabelRef.current) {
+      optionsLabelRef.current.style.opacity = String(getActionOpacity(OPTIONS_X, notificationOffset))
+    }
+    if (clearLabelRef.current) {
+      clearLabelRef.current.style.opacity = String(getActionOpacity(CLEAR_X, notificationOffset))
+    }
+  }
+
+  function setNotificationOffset(notificationOffset: number) {
+    offsetRef.current = notificationOffset
+
+    if (notificationTransformRef.current) {
+      notificationTransformRef.current.x = notificationOffset
+    }
+
+    updateActionLabels(notificationOffset)
+    invalidateFrame()
+  }
+
+  function cancelOffsetAnimation() {
+    offsetAnimationRef.current?.stop()
+    offsetAnimationRef.current = null
+    offsetAnimatingRef.current = false
+
+    if (notificationTransformRef.current) {
+      offsetRef.current = notificationTransformRef.current.x
+      updateActionLabels(notificationTransformRef.current.x)
+    }
+  }
+
+  function animateNotificationOffset(targetOffset: number) {
+    cancelOffsetAnimation()
+
+    const notificationTransform = notificationTransformRef.current
+    if (!notificationTransform) {
+      setNotificationOffset(targetOffset)
+      return
+    }
+
+    offsetAnimatingRef.current = true
+    const controls = animate(notificationTransform, { x: targetOffset }, NOTIFICATION_OFFSET_TRANSITION)
+    offsetAnimationRef.current = controls
+
+    void controls.finished.then(() => {
+      if (offsetAnimationRef.current !== controls) {
+        return
+      }
+
+      offsetAnimationRef.current = null
+      offsetAnimatingRef.current = false
+      setNotificationOffset(notificationTransform.x)
+    })
+  }
+
+  useFrame(() => {
+    if (!offsetAnimatingRef.current || !notificationTransformRef.current) {
+      return
+    }
+
+    const animatedOffset = notificationTransformRef.current.x
+    offsetRef.current = animatedOffset
+    updateActionLabels(animatedOffset)
+  })
+
+  useEffect(() => {
+    setNotificationOffset(offsetRef.current)
+    return cancelOffsetAnimation
+  }, [])
+
+  function setCanvasCursor(cursorClass: string | null) {
+    const canvas = renderer.canvas
+    canvas.classList.remove(styles.canvasGrab, styles.canvasGrabbing)
+
+    if (cursorClass) {
+      canvas.classList.add(cursorClass)
+    }
+  }
+
+  function handlePointerEnter() {
+    notificationHoveredRef.current = true
+
+    if (draggingRef.current) {
+      return
+    }
+
+    setCanvasCursor(styles.canvasGrab)
+  }
+
+  function handlePointerLeave() {
+    notificationHoveredRef.current = false
+
+    if (draggingRef.current) {
+      return
+    }
+
+    setCanvasCursor(null)
+  }
+
+  const bind = useDrag<GlassPointerEvent | PointerEvent>(({
+    active,
+    first,
+    last,
+    offset: [notificationOffset],
+  }) => {
+    if (first) {
+      cancelOffsetAnimation()
+      draggingRef.current = true
+      setCanvasCursor(styles.canvasGrabbing)
+    }
+
+    if (last || !active) {
+      const boundedOffset = clamp(notificationOffset, OPEN_OFFSET, 0)
+      draggingRef.current = false
+      setCanvasCursor(notificationHoveredRef.current ? styles.canvasGrab : null)
+      animateNotificationOffset(boundedOffset < OPEN_OFFSET * 0.42 ? OPEN_OFFSET : 0)
+      return
+    }
+
+    setNotificationOffset(notificationOffset)
+  }, {
+    axis: 'x',
+    bounds: { left: OPEN_OFFSET, right: 0 },
+    from: () => [offsetRef.current, 0],
+    preventDefault: true,
+    rubberband: [NOTIFICATION_RUBBERBAND, 0],
+    pointer: {
+      capture: false,
+      keys: false,
+    },
+  }) as () => GlassDragBind
+
+  return (
+    <ZStack alignment="center">
+      <Html zIndex={-2} sizing="fill">
+        <img
+          alt=""
+          className={styles.backgroundImage}
+          src={abstractShapesUrl}
+        />
+      </Html>
+
+      <Frame maxWidth={Infinity} maxHeight={Infinity}>
+        <GlassContainer
+          blur={12}
+          spacing={8}
+          bezelWidth={18}
+          tint={{ r: 0.82, g: 0.92, b: 0.95, a: 0.22 }}
+          shadowColor={{ r: 0, g: 0, b: 0, a: 0.2 }}
+          shadowOffsetY={7}
+          shadowBlur={21}
+          specularOpacity={0.6}
+        >
+          <ZStack alignment="center">
+            <Transform x={OPTIONS_X} origin={{ x: ACTION_WIDTH / 2, y: ACTION_HEIGHT / 2 }}>
+              <ActionGlass label="Options" labelRef={optionsLabelRef} />
+            </Transform>
+
+            <Transform x={CLEAR_X} origin={{ x: ACTION_WIDTH / 2, y: ACTION_HEIGHT / 2 }}>
+              <ActionGlass label="Clear" labelRef={clearLabelRef} />
+            </Transform>
+
+            <Transform
+              ref={notificationTransformRef}
+              x={0}
+              origin={NOTIFICATION_ORIGIN}
+            >
+              <Glass
+                cornerRadius={NOTIFICATION_CORNER_RADIUS}
+                pointerEvents
+                {...bind()}
+                onPointerEnter={handlePointerEnter}
+                onPointerLeave={handlePointerLeave}
+              >
+                <Overlay
+                  overlay={
+                    <Html sizing="fill">
+                      <NotificationContent />
+                    </Html>
+                  }
+                >
+                  <Frame width={NOTIFICATION_WIDTH} height={NOTIFICATION_HEIGHT} />
+                </Overlay>
+              </Glass>
+            </Transform>
+          </ZStack>
+        </GlassContainer>
+      </Frame>
+    </ZStack>
+  )
+}
+
+function ActionGlass({
+  label,
+  labelRef,
+}: {
+  label: string
+  labelRef: RefObject<HTMLDivElement | null>
+}) {
+  const [hovered, setHovered] = useState(false)
+  const [pressed, setPressed] = useState(false)
+  const actionScale = pressed ? ACTION_PRESS_SCALE : hovered ? ACTION_HOVER_SCALE : 1
+
+  return (
+    <Transform
+      origin={{ x: ACTION_WIDTH / 2, y: ACTION_HEIGHT / 2 }}
+      scaleX={actionScale}
+      scaleY={actionScale}
+      transition={{
+        scaleX: ACTION_SCALE_TRANSITION,
+        scaleY: ACTION_SCALE_TRANSITION,
+      }}
+    >
+      <Glass
+        cornerRadius={ACTION_CORNER_RADIUS}
+        pointerEvents
+        onHover={setHovered}
+        onPress={setPressed}
+      >
+        <Overlay
+          overlay={
+            <Html sizing="fill">
+              <div
+                ref={labelRef}
+                className={styles.actionLabel}
+              >
+                {label}
+              </div>
+            </Html>
+          }
+        >
+          <Frame width={ACTION_WIDTH} height={ACTION_HEIGHT} />
+        </Overlay>
+      </Glass>
+    </Transform>
+  )
+}
+
+function NotificationContent() {
+  return (
+    <div className={styles.content}>
+      <div className={styles.avatar}>
+        SS
+      </div>
+
+      <div className={styles.copy}>
+        <div className={styles.heading}>
+          <strong>Sonia Shaikh</strong>
+          <span>27m ago</span>
+        </div>
+        <p className={styles.message}>
+          I think GM of anthropic in Australia just responded to me using Claude agent lol
+        </p>
+      </div>
+    </div>
+  )
+}

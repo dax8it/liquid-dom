@@ -1,0 +1,111 @@
+.root {
+  --notification-font-size: 20px;
+
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.canvasShell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #0a0a0a;
+}
+
+.canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+.canvasGrab {
+  cursor: grab;
+}
+
+.canvasGrabbing {
+  cursor: grabbing;
+}
+
+.backgroundImage {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.actionLabel {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  color: rgba(255, 255, 255, 0.95);
+  font-size: var(--notification-font-size);
+  line-height: 1;
+  opacity: 0;
+  user-select: none;
+}
+
+.content {
+  display: grid;
+  grid-template-columns: 70px minmax(0, 1fr);
+  align-items: center;
+  gap: 20px;
+  width: 100%;
+  height: 100%;
+  padding: 0 20px;
+  color: white;
+  user-select: none;
+}
+
+.avatar {
+  display: grid;
+  width: 70px;
+  height: 70px;
+  place-items: center;
+  border-radius: 50%;
+  color: rgba(255, 255, 255, 0.9);
+  background: linear-gradient(325deg, rgba(82, 103, 117, 0.76), rgba(146, 164, 176, 0.72));
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.copy {
+  min-width: 0;
+}
+
+.heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  margin-bottom: 5px;
+}
+
+.heading strong {
+  overflow: hidden;
+  font-size: var(--notification-font-size);
+  line-height: 1.17;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.heading span {
+  color: rgba(255, 255, 255, 0.65);
+  font-size: calc(var(--notification-font-size) * 0.8);
+  white-space: nowrap;
+}
+
+.message {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: var(--notification-font-size);
+  line-height: 1.17;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
