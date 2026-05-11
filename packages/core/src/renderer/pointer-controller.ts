@@ -60,6 +60,10 @@ export class PointerController {
 
   /** Native pointerleave listener wired to the renderer canvas. */
   readonly handlePointerLeave = (event: PointerEvent) => {
+    if (!this.isTargetCanvasLeave(event)) {
+      return
+    }
+
     this.handleNativePointerEvent('pointerleave', event)
   }
 
@@ -108,6 +112,16 @@ export class PointerController {
       canvasX: event.clientX - bounds.left,
       canvasY: event.clientY - bounds.top,
     }
+  }
+
+  /** Returns whether a native pointerleave means the pointer left the renderer canvas itself. */
+  private isTargetCanvasLeave(event: PointerEvent) {
+    if (event.target !== this.options.targetCanvas) {
+      return false
+    }
+
+    const relatedTarget = event.relatedTarget
+    return !(relatedTarget instanceof Node && this.options.targetCanvas.contains(relatedTarget))
   }
 
   /** Dispatches a synthetic glass pointer event and mirrors preventDefault. */
