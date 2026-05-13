@@ -22,7 +22,30 @@ import {
   type GlassProps,
   type TransformRef,
 } from '@liquid-dom/react'
-import { Camera, Flashlight, MoonStar } from 'lucide-react'
+import {
+  BookOpen,
+  Camera,
+  CloudSun,
+  Compass,
+  Dumbbell,
+  Flashlight,
+  Folder,
+  HeartPulse,
+  House,
+  Image,
+  Mail,
+  Map,
+  MessageCircle,
+  MoonStar,
+  Music,
+  Newspaper,
+  Podcast,
+  ShoppingBag,
+  StickyNote,
+  WalletCards,
+  Workflow,
+  type LucideIcon,
+} from 'lucide-react'
 import abstractShapesUrl from '../assets/narrow-background.jpg'
 import styles from './NotificationCenterDemo.module.css'
 
@@ -45,30 +68,35 @@ const BUTTON_SCALE_TRANSITION = spring({ stiffness: 720, damping: 42 })
 const APP_ICON_OPACITY_TRANSITION = spring({ stiffness: 420, damping: 42 })
 
 type GlassDragBind = Pick<GlassProps, 'onPointerDown' | 'onPointerMove' | 'onPointerUp' | 'onPointerCancel'>
+type AppIconSpec = {
+  label: string
+  color: string
+  Icon: LucideIcon
+}
 
-const appIcons = [
-  { label: 'Music', color: '#ff2d55' },
-  { label: 'Photos', color: '#ff9500' },
-  { label: 'Maps', color: '#34c759' },
-  { label: 'Mail', color: '#007aff' },
-  { label: 'Files', color: '#5856d6' },
-  { label: 'Notes', color: '#ffcc00' },
-  { label: 'Health', color: '#ff3b30' },
-  { label: 'Home', color: '#00c7be' },
-  { label: 'Weather', color: '#32ade6' },
-  { label: 'Wallet', color: '#af52de' },
-  { label: 'Books', color: '#ff9f0a' },
-  { label: 'Store', color: '#5e5ce6' },
-  { label: 'News', color: '#ff453a' },
-  { label: 'Fitness', color: '#30d158' },
-  { label: 'Podcasts', color: '#bf5af2' },
+const appIcons: AppIconSpec[] = [
+  { label: 'Music', color: '#ff2d55', Icon: Music },
+  { label: 'Photos', color: '#ff9500', Icon: Image },
+  { label: 'Maps', color: '#34c759', Icon: Map },
+  { label: 'Mail', color: '#007aff', Icon: Mail },
+  { label: 'Files', color: '#5856d6', Icon: Folder },
+  { label: 'Notes', color: '#ffcc00', Icon: StickyNote },
+  { label: 'Health', color: '#ff3b30', Icon: HeartPulse },
+  { label: 'Home', color: '#00c7be', Icon: House },
+  { label: 'Weather', color: '#32ade6', Icon: CloudSun },
+  { label: 'Wallet', color: '#af52de', Icon: WalletCards },
+  { label: 'Books', color: '#ff9f0a', Icon: BookOpen },
+  { label: 'Store', color: '#5e5ce6', Icon: ShoppingBag },
+  { label: 'News', color: '#ff453a', Icon: Newspaper },
+  { label: 'Fitness', color: '#30d158', Icon: Dumbbell },
+  { label: 'Podcasts', color: '#bf5af2', Icon: Podcast },
 ]
 
-const trayIcons = [
-  { label: 'Camera', color: '#8e8e93' },
-  { label: 'Safari', color: '#0a84ff' },
-  { label: 'Shortcuts', color: '#bf5af2' },
-  { label: 'Messages', color: '#30d158' },
+const trayIcons: AppIconSpec[] = [
+  { label: 'Camera', color: '#8e8e93', Icon: Camera },
+  { label: 'Safari', color: '#0a84ff', Icon: Compass },
+  { label: 'Shortcuts', color: '#bf5af2', Icon: Workflow },
+  { label: 'Messages', color: '#30d158', Icon: MessageCircle },
 ]
 
 function clamp(value: number, min: number, max: number) {
@@ -255,7 +283,9 @@ function NotificationCenterScene() {
                 <div
                   className={styles.appIcon}
                   style={{ '--app-color': app.color } as CSSProperties}
-                />
+                >
+                  <app.Icon className={styles.appIconGlyph} aria-hidden="true" />
+                </div>
                 <div className={styles.appLabel}>{app.label}</div>
               </div>
             ))}
@@ -296,7 +326,9 @@ function NotificationCenterScene() {
                       key={app.label}
                       className={styles.appIcon}
                       style={{ '--app-color': app.color } as CSSProperties}
-                    />
+                    >
+                      <app.Icon className={styles.appIconGlyph} aria-hidden="true" />
+                    </div>
                   ))}
                 </div>
               </Html></Padding>
