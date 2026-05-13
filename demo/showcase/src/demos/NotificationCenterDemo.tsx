@@ -304,9 +304,9 @@ function NotificationCenterScene() {
             transition={{ opacity: APP_ICON_OPACITY_TRANSITION }}
             blur={8}
             bezelWidth={20}
-            thickness={70}
+            thickness={80}
             displacementBlur={6}
-            tint={{ r: 0, g: 0, b: 0, a: 0 }}
+            tint={{ r: 1, g: 1, b: 1, a: 0.1 }}
             shadowColor={{ r: 0, g: 0, b: 0, a: 0.05 }}
             shadowOffsetY={10}
             shadowBlur={24}
@@ -346,7 +346,7 @@ function NotificationCenterScene() {
           bezelWidth={30}
           thickness={80}
           displacementBlur={0}
-          tint={{ r: 0, g: 0, b: 0, a: 0.3 }}
+          tint={{ r: 1, g: 1, b: 1, a: 0.1 }}
           shadowColor={{ r: 0, g: 0, b: 0, a: 0.18 }}
           shadowOffsetY={24}
           shadowBlur={52}
@@ -441,24 +441,20 @@ function CenterButton({
         scaleY: BUTTON_SCALE_TRANSITION,
       }}
     >
-      <Glass
-        cornerRadius={400}
-        pointerEvents
-        onHover={setHovered}
-        onPress={setPressed}
-      >
-        <Overlay
-          overlay={
-            <Html sizing="fill">
-              <div className={styles.buttonContent} aria-label={label}>
-                {children}
-              </div>
-            </Html>
-          }
+      <Frame width={BUTTON_SIZE} height={BUTTON_SIZE}>
+        <Glass
+          cornerRadius={400}
+          pointerEvents
+          onHover={setHovered}
+          onPress={setPressed}
         >
-          <Frame width={BUTTON_SIZE} height={BUTTON_SIZE} />
-        </Overlay>
-      </Glass>
+          <Html sizing="fill">
+            <div className={styles.buttonContent} aria-label={label}>
+              {children}
+            </div>
+          </Html>
+        </Glass>
+      </Frame>
     </Transform>
   )
 }
