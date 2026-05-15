@@ -91,6 +91,29 @@ import {
 
 Scene children are rendered by `zIndex`, then by entry order. Scene-level `Html` below a container becomes backdrop content for that container; scene-level `Html` above a container covers it and becomes backdrop content for later containers.
 
+### Html Options
+
+`Html` nodes wrap live DOM content and are copied into GPU textures before compositing. Common options are:
+
+- `element`: DOM element mounted into the retained host.
+- `opacity`: final opacity used when compositing the copied HTML texture.
+- `blur`: GPU blur radius in CSS pixels. `blur <= 0` uses the unfiltered fast path.
+- `zIndex`: scene draw order among sibling scene or glass HTML nodes.
+
+`Html.blur` is renderer-backed. It does not apply a CSS filter to the DOM element; the renderer keeps the raw DOM-copied texture, applies the adaptive blur pipeline when needed, then composites either the raw or blurred texture. This works for scene-level `Html` and for `Html` rendered inside glass.
+
+```ts
+const panelContent = new Html({
+  width: 240,
+  height: 160,
+  element: contentElement,
+  opacity: 0.9,
+  blur: 8,
+})
+
+glass.add(panelContent)
+```
+
 ### Node Relationship Rules
 
 Scene graph children must match the nearest non-group parent:
@@ -165,6 +188,8 @@ import {
 ```
 
 Use this subpath when building a non-React retained UI. `LayoutScene.layout(proposal)` measures and places layout nodes, then synchronizes their scene graph nodes. The React package builds on the same classes.
+
+The retained `Html` layout node exposes the same compositing options as scene `Html`, including `opacity`, `blur`, and `zIndex`.
 
 Some retained layout nodes accept exactly one direct child: `Frame`, `Padding`, `Transform`, `GlassContainer`, and `Glass`. If you need multiple children inside one of these nodes, put those children inside a multi-child layout node such as `HStack`, `VStack`, or `ZStack`, then use that layout node as the single child.
 

@@ -96,6 +96,28 @@ import { Glass, GlassContainer, Html } from '@liquid-dom/react'
 
 `Html` supports `sizing="intrinsic"`, `sizing="constrained-width"`, and `sizing="fill"`.
 
+`Html` also supports renderer-backed compositing props:
+
+- `opacity`: final opacity used when compositing the DOM-backed content.
+- `blur`: GPU blur radius in CSS pixels. This does not use CSS filters; the renderer blurs the copied HTML texture before compositing it.
+- `zIndex`: scene draw order among sibling scene or glass HTML nodes.
+
+These props are animatable:
+
+```tsx
+<Html
+  blur={open ? 0 : 12}
+  opacity={open ? 1 : 0}
+  sizing="fill"
+  transition={{
+    blur: easing({ duration: 0.25, ease: Easing.easeOut }),
+    opacity: spring({ stiffness: 300, damping: 30 }),
+  }}
+>
+  <MenuContent />
+</Html>
+```
+
 ### Node Relationship Rules
 
 React components ultimately synchronize into the `@liquid-dom/core` scene graph, so nested children must satisfy the underlying parent rules:
@@ -140,6 +162,8 @@ const [pressed, setPressed] = useState(false)
 
 ```tsx
 import {
+  Easing,
+  easing,
   spring,
   useAnimate,
   useFrame,
@@ -164,6 +188,24 @@ Declarative prop animation uses `transition`:
 ```
 
 Only properties listed in `transition` animate. Numeric values and numeric object values can animate; strings, booleans, and enums snap.
+
+`spring()` creates physics-based transitions. `easing()` creates duration-based transitions:
+
+```tsx
+<Frame
+  width={expanded ? 260 : 140}
+  transition={{
+    width: easing({
+      duration: 0.25,
+      ease: Easing.bezier(0.8, 0.2, 0.5, 0.8),
+    }),
+  }}
+/>
+```
+
+Easing durations are in seconds. `ease` receives normalized progress from `0` to `1` and returns normalized progress. The convenience `Easing` namespace provides `linear`, `easeIn`, `easeOut`, `easeInOut`, and CSS-style `bezier(x1, y1, x2, y2)`.
+
+When an active easing animation is retargeted, it starts a new easing transition from the current interpolated value to the new target. `duration <= 0` snaps immediately.
 
 `useAnimate()` starts direct retained-node animations and returns controls with `finished` and `stop()`. `useTimeline()` creates sequential animation timelines. `useFrame()` registers a callback in the nearest `LayoutCanvas` frame loop.
 
