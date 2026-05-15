@@ -46,7 +46,6 @@ const MENU_OPEN_Y = 0
 const BUTTON_OPEN_X = MENU_OPEN_X + MENU_WIDTH / 2 - BUTTON_SIZE / 2
 const BUTTON_OPEN_Y = MENU_OPEN_Y + MENU_HEIGHT / 2 - BUTTON_SIZE / 2
 
-const MENU_SIZE_EASE = Easing.bezier(0.8, 0.3, 0.5, 0.8)
 const BUTTON_OPEN_POSITION_TRANSITION = spring({
   stiffness: 499,
   damping: 22,
@@ -75,7 +74,7 @@ const MENU_OPEN_POSITION_TRANSITION = spring({
 })
 const MENU_OPEN_SIZE_TRANSITION = easing({
   duration: 0.3,
-  ease: MENU_SIZE_EASE,
+  ease: Easing.bezier(0.8, 0.3, 0.5, 0.8),
 })
 const MENU_CLOSE_POSITION_TRANSITION = spring({
   stiffness: 130,
@@ -84,6 +83,10 @@ const MENU_CLOSE_POSITION_TRANSITION = spring({
 const MENU_CLOSE_SIZE_TRANSITION = easing({
   duration: 0.25,
   ease: Easing.easeOut,
+})
+const MENU_OPEN_RADIUS_TRANSITION = easing({
+  duration: 0.25,
+  ease: Easing.bezier(0.8, 0.3, 0.5, 0.8),
 })
 const CONTENT_TRANSITION = spring({
   stiffness: 137,
@@ -266,7 +269,7 @@ export default function MenuDemo() {
                             pointerEvents={false}
                             transition={{
                               cornerRadius: open
-                                ? MENU_OPEN_SIZE_TRANSITION
+                                ? MENU_OPEN_RADIUS_TRANSITION
                                 : MENU_CLOSE_SIZE_TRANSITION,
                             }}
                           >
