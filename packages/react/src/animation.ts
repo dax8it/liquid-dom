@@ -4,9 +4,14 @@ type NumericObject = {
 
 type AnimationChannel = {
   current: number
+  origin: number
   target: number
   velocity: number
 }
+
+type NormalizedSpringTransition = Required<SpringTransition>
+type NormalizedEasingTransition = Required<EasingTransition>
+type NormalizedTransition = NormalizedSpringTransition | NormalizedEasingTransition
 
 type AnimationValue =
   | {
@@ -23,7 +28,8 @@ type PropertyAnimation = {
   target: object
   property: string
   value: AnimationValue
-  config: Required<SpringTransition>
+  config: NormalizedTransition
+  elapsed: number
   listeners: Set<() => void>
 }
 
@@ -50,8 +56,16 @@ export type SpringTransition = {
   restDelta?: number
 }
 
+export type EasingFunction = (t: number) => number
+
+export type EasingTransition = {
+  type: 'easing'
+  duration?: number
+  ease?: EasingFunction
+}
+
 /** Animation transition config accepted by React props and imperative animation calls. */
-export type AnimationConfig = SpringTransition | true | false | null | undefined
+export type AnimationConfig = SpringTransition | EasingTransition | true | false | null | undefined
 
 /** Per-property declarative transition map for a component. */
 export type TransitionMap<T extends object = Record<string, unknown>> = Partial<
@@ -90,6 +104,90 @@ function defaultSpring(): Required<SpringTransition> {
   }
 }
 
+function clamp01(value: number) {
+  return Math.min(Math.max(Number.isFinite(value) ? value : 0, 0), 1)
+}
+
+function cubicBezierCoordinate(t: number, p1: number, p2: number) {
+  const invT = 1 - t
+  return 3 * invT * invT * t * p1 + 3 * invT * t * t * p2 + t * t * t
+}
+
+function cubicBezierDerivative(t: number, p1: number, p2: number) {
+  const invT = 1 - t
+  return 3 * invT * invT * p1 + 6 * invT * t * (p2 - p1) + 3 * t * t * (1 - p2)
+}
+
+export const Easing = {
+  linear: (t: number) => t,
+  easeIn: (t: number) => t * t,
+  easeOut: (t: number) => 1 - (1 - t) * (1 - t),
+  easeInOut: (t: number) => (
+    t < 0.5
+      ? 2 * t * t
+      : 1 - ((-2 * t + 2) * (-2 * t + 2)) / 2
+  ),
+  bezier: (x1: number, y1: number, x2: number, y2: number): EasingFunction => {
+    const cx1 = clamp01(x1)
+    const cx2 = clamp01(x2)
+
+    return (progress: number) => {
+      const x = clamp01(progress)
+      if (x === 0 || x === 1) {
+        return x
+      }
+
+      let t = x
+      let solved = false
+      for (let index = 0; index < 8; index += 1) {
+        const currentX = cubicBezierCoordinate(t, cx1, cx2) - x
+        const derivative = cubicBezierDerivative(t, cx1, cx2)
+        if (Math.abs(currentX) < 1e-6) {
+          solved = true
+          break
+        }
+        if (Math.abs(derivative) < 1e-6) {
+          break
+        }
+
+        const nextT = t - currentX / derivative
+        if (nextT < 0 || nextT > 1) {
+          break
+        }
+        t = nextT
+      }
+
+      if (!solved) {
+        let lower = 0
+        let upper = 1
+        t = x
+        for (let index = 0; index < 16; index += 1) {
+          const currentX = cubicBezierCoordinate(t, cx1, cx2)
+          if (Math.abs(currentX - x) < 1e-6) {
+            break
+          }
+          if (currentX < x) {
+            lower = t
+          } else {
+            upper = t
+          }
+          t = (lower + upper) / 2
+        }
+      }
+
+      return cubicBezierCoordinate(t, y1, y2)
+    }
+  },
+} as const
+
+function defaultEasing(): Required<EasingTransition> {
+  return {
+    type: 'easing',
+    duration: 0.25,
+    ease: Easing.easeInOut,
+  }
+}
+
 /** Creates a spring transition config. */
 export function spring(options: Omit<SpringTransition, 'type'> = {}): SpringTransition {
   return {
@@ -98,13 +196,28 @@ export function spring(options: Omit<SpringTransition, 'type'> = {}): SpringTran
   }
 }
 
-function normalizeSpring(config: AnimationConfig): Required<SpringTransition> | null {
+export function easing(options: Omit<EasingTransition, 'type'> = {}): EasingTransition {
+  return {
+    type: 'easing',
+    ...options,
+  }
+}
+
+function normalizeTransition(config: AnimationConfig): NormalizedTransition | null {
   if (!config) {
     return null
   }
 
   if (config === true) {
     return defaultSpring()
+  }
+
+  if (isEasingTransition(config)) {
+    return {
+      ...defaultEasing(),
+      ...config,
+      type: 'easing',
+    }
   }
 
   return {
@@ -130,6 +243,22 @@ function isSpringTransition(value: unknown): value is SpringTransition | true {
   )
 }
 
+function isEasingTransition(value: unknown): value is EasingTransition {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    (
+      (value as { type?: unknown }).type === 'easing' ||
+      'duration' in value ||
+      'ease' in value
+    )
+  )
+}
+
+function isAnimationTransition(value: unknown): value is SpringTransition | EasingTransition | true {
+  return value === true || isSpringTransition(value) || isEasingTransition(value)
+}
+
 /** Resolves the transition config that applies to one property. */
 export function resolveTransition(
   transition: ComponentTransition | undefined,
@@ -139,7 +268,7 @@ export function resolveTransition(
     return transition
   }
 
-  if (isSpringTransition(transition)) {
+  if (isAnimationTransition(transition)) {
     return transition
   }
 
@@ -188,14 +317,23 @@ function setPath(target: NumericObject, path: string, value: number) {
   current[parts[parts.length - 1]] = value
 }
 
+function resolveInitialVelocity(current: number, target: number, configuredVelocity: number) {
+  if (configuredVelocity === 0 || current === target) {
+    return 0
+  }
+
+  return Math.abs(configuredVelocity) * Math.sign(target - current)
+}
+
 function buildAnimationValue(from: unknown, to: unknown, initialVelocity: number): AnimationValue | null {
   if (typeof from === 'number' && typeof to === 'number') {
     return {
       kind: 'number',
       channel: {
         current: from,
+        origin: from,
         target: to,
-        velocity: initialVelocity,
+        velocity: resolveInitialVelocity(from, to, initialVelocity),
       },
     }
   }
@@ -218,8 +356,9 @@ function buildAnimationValue(from: unknown, to: unknown, initialVelocity: number
     }
     channels.set(path, {
       current,
+      origin: current,
       target,
-      velocity: initialVelocity,
+      velocity: resolveInitialVelocity(current, target, initialVelocity),
     })
   }
 
@@ -230,15 +369,23 @@ function buildAnimationValue(from: unknown, to: unknown, initialVelocity: number
   }
 }
 
-function retargetAnimationValue(value: AnimationValue, to: unknown, initialVelocity: number) {
+function retargetAnimationValue(
+  value: AnimationValue,
+  to: unknown,
+  initialVelocity: number,
+  resetOrigin: boolean,
+) {
   if (value.kind === 'number') {
     if (typeof to !== 'number') {
       return false
     }
 
     value.channel.target = to
-    if (initialVelocity !== 0) {
-      value.channel.velocity = initialVelocity
+    if (resetOrigin) {
+      value.channel.origin = value.channel.current
+      value.channel.velocity = 0
+    } else if (initialVelocity !== 0) {
+      value.channel.velocity = resolveInitialVelocity(value.channel.current, to, initialVelocity)
     }
     return true
   }
@@ -258,8 +405,11 @@ function retargetAnimationValue(value: AnimationValue, to: unknown, initialVeloc
       return false
     }
     channel.target = target
-    if (initialVelocity !== 0) {
-      channel.velocity = initialVelocity
+    if (resetOrigin) {
+      channel.origin = channel.current
+      channel.velocity = 0
+    } else if (initialVelocity !== 0) {
+      channel.velocity = resolveInitialVelocity(channel.current, target, initialVelocity)
     }
   }
   value.template = cloneNumericObject(to)
@@ -303,6 +453,10 @@ function stepChannel(channel: AnimationChannel, config: Required<SpringTransitio
   }
 }
 
+function stepEasingChannel(channel: AnimationChannel, easedProgress: number) {
+  channel.current = channel.origin + (channel.target - channel.origin) * easedProgress
+}
+
 function assignProperty(target: object, property: string, value: unknown) {
   const writableTarget = target as Record<string, unknown>
   writableTarget[property] = value
@@ -324,13 +478,13 @@ export class AnimationManager {
     return this.animations.size > 0
   }
 
-  /** Starts or retargets spring animations for the provided properties. */
+  /** Starts or retargets animations for the provided properties. */
   animate<Target extends object>(
     target: Target | null | undefined,
     values: Partial<Target>,
     transition: AnimationConfig = true,
   ): AnimationControls {
-    const config = normalizeSpring(transition)
+    const config = normalizeTransition(transition)
     if (!target || !config) {
       return {
         finished: resolveFinished(),
@@ -349,8 +503,22 @@ export class AnimationManager {
       const currentValue = (target as Record<string, unknown>)[property]
       const targetAnimations = this.getTargetAnimations(target)
       const existing = targetAnimations.get(property)
-      if (existing && retargetAnimationValue(existing.value, nextValue, config.velocity)) {
+
+      if (config.type === 'easing' && config.duration <= 0) {
+        existing && this.finishAnimation(existing, false)
+        assignProperty(target, property, nextValue)
+        continue
+      }
+
+      const initialVelocity = config.type === 'spring' ? config.velocity : 0
+      if (existing && retargetAnimationValue(
+        existing.value,
+        nextValue,
+        initialVelocity,
+        config.type === 'easing',
+      )) {
         existing.config = config
+        existing.elapsed = 0
         remaining += 1
         const listener = () => {
           remaining -= 1
@@ -364,7 +532,7 @@ export class AnimationManager {
       }
 
       existing && this.finishAnimation(existing, false)
-      const value = buildAnimationValue(currentValue, nextValue, config.velocity)
+      const value = buildAnimationValue(currentValue, nextValue, initialVelocity)
       if (!value) {
         assignProperty(target, property, nextValue)
         continue
@@ -375,6 +543,7 @@ export class AnimationManager {
         property,
         value,
         config,
+        elapsed: 0,
         listeners: new Set(),
       }
       remaining += 1
@@ -433,19 +602,37 @@ export class AnimationManager {
       return false
     }
 
-    const deltaSeconds = Math.min(0.064, Math.max(0, deltaMilliseconds / 1000))
-    const stepCount = Math.max(1, Math.ceil(deltaSeconds / (1 / 60)))
-    const stepSeconds = deltaSeconds / stepCount
+    const deltaSeconds = Math.max(0, deltaMilliseconds / 1000)
+    const springDeltaSeconds = Math.min(0.064, deltaSeconds)
+    const stepCount = Math.max(1, Math.ceil(springDeltaSeconds / (1 / 60)))
+    const stepSeconds = springDeltaSeconds / stepCount
 
     for (const animation of [...this.animations]) {
-      for (let step = 0; step < stepCount; step += 1) {
-        for (const channel of getChannels(animation.value)) {
-          stepChannel(channel, animation.config, stepSeconds)
+      let complete = false
+
+      if (animation.config.type === 'spring') {
+        const springConfig = animation.config
+        for (let step = 0; step < stepCount; step += 1) {
+          for (const channel of getChannels(animation.value)) {
+            stepChannel(channel, springConfig, stepSeconds)
+          }
         }
+
+        complete = getChannels(animation.value).every((channel) => isSettled(channel, springConfig))
+      } else {
+        animation.elapsed += deltaSeconds
+        const progress = clamp01(animation.elapsed / animation.config.duration)
+        const easedProgress = clamp01(animation.config.ease(progress))
+
+        for (const channel of getChannels(animation.value)) {
+          stepEasingChannel(channel, easedProgress)
+        }
+
+        complete = progress >= 1
       }
 
       assignProperty(animation.target, animation.property, materializeValue(animation.value))
-      if (getChannels(animation.value).every((channel) => isSettled(channel, animation.config))) {
+      if (complete) {
         this.finishAnimation(animation, true)
       }
     }
@@ -468,6 +655,7 @@ export class AnimationManager {
     if (snapToTarget) {
       for (const channel of getChannels(animation.value)) {
         channel.current = channel.target
+        channel.origin = channel.target
         channel.velocity = 0
       }
       assignProperty(animation.target, animation.property, materializeValue(animation.value))

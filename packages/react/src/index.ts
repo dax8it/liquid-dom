@@ -12,10 +12,14 @@ export {
 export {
   AnimationManager,
   AnimationTimeline,
+  Easing,
+  easing,
   spring,
 } from './animation'
 export type {
   AnimationControls,
+  EasingFunction,
+  EasingTransition,
   SpringTransition,
   TransitionMap,
 } from './animation'
