@@ -81,7 +81,7 @@ export default function ControlCenterDemo() {
               shadowBlur={30}
               specularOpacity={0.7}
               specularFalloff={1}
-              specularWidth={2}
+              specularWidth={1}
               specularStrength={1}
               specularSharpness={3}
               oppositeSpecularStrength={0.5}
