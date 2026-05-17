@@ -218,7 +218,7 @@ function ControlButton({
         scaleY: BUTTON_SCALE_TRANSITION,
       }}
     >
-      <Frame width={200} height={size}>
+      <Frame width={size} height={size}>
         <Glass
           cornerRadius={size / 2}
           pointerEvents={visible}
