@@ -126,7 +126,7 @@ export default function SdfOverlapDemo() {
         value: INITIAL_BLUR,
         min: 0,
         max: 80,
-        step: 1,
+        step: 0.1,
         label: 'Blur',
       },
       bezelWidth: {

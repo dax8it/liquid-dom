@@ -11,21 +11,21 @@ describe('adaptive blur level selection', () => {
     })
   })
 
-  it('keeps an 8px radius at full resolution', () => {
-    expect(chooseAdaptiveBlurLevel(8, 4)).toEqual({
+  it('keeps a 6px radius at full resolution', () => {
+    expect(chooseAdaptiveBlurLevel(6, 4)).toEqual({
       skip: false,
       level: 0,
       scale: 1,
-      effectiveRadius: 8,
+      effectiveRadius: 6,
     })
   })
 
-  it('moves a 16px radius to the first downsample level', () => {
-    expect(chooseAdaptiveBlurLevel(16, 4)).toEqual({
+  it('moves a 12px radius to the first downsample level', () => {
+    expect(chooseAdaptiveBlurLevel(12, 4)).toEqual({
       skip: false,
       level: 1,
       scale: 2,
-      effectiveRadius: 8,
+      effectiveRadius: 6,
     })
   })
 

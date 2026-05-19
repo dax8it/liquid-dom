@@ -15,7 +15,7 @@ import {
 import type { AdaptiveBlurTargetChain } from './gpu-targets'
 import { BlurParamsLayout } from './shader-layouts'
 
-export const ADAPTIVE_BLUR_DENSE_RADIUS_PX = 8
+export const ADAPTIVE_BLUR_DENSE_RADIUS_PX = 6
 const TRANSPARENT_BLACK = { r: 0, g: 0, b: 0, a: 0 } as const
 
 type BlurParamsBuffer = GpuStructBuffer<GpuStructDefinition<typeof BlurParamsLayout>>
@@ -118,7 +118,7 @@ export function renderAdaptiveBlur({
     return source
   }
 
-  // Move to the coarsest selected level first so the fixed 17-tap kernel stays
+  // Move to the coarsest selected level first so the fixed blur kernel stays
   // dense relative to the effective radius, even for large CSS blur values.
   let current = source
   for (let levelIndex = 1; levelIndex <= selection.level; levelIndex += 1) {

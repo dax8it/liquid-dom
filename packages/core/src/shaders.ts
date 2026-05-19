@@ -87,10 +87,10 @@ fn fragmentMain(in: VertexOutput) -> @location(0) vec4f {
 `
 
 // Shared adaptive blur kernel for backdrop color and premultiplied displacement
-// fields. The constants are generated from a sigma=4, 17-tap Gaussian over
-// [-8..8]. Neighboring same-side taps are paired into one bilinear-filtered
-// sample, so the shader keeps the smoothness of the dense kernel without paying
-// for all 17 texture reads.
+// fields. The constants are generated from a sigma=3, 13-tap Gaussian over
+// [-6..6]. Neighboring same-side taps are paired into one bilinear-filtered
+// sample, so the shader keeps the shape of the dense kernel without paying for
+// all 13 texture reads.
 export const ADAPTIVE_BLUR_SHADER = /* wgsl */ `
 ${BlurParamsLayout.wgsl('BlurParams')}
 ${FULLSCREEN_VERTEX}
@@ -99,19 +99,17 @@ ${FULLSCREEN_VERTEX}
 @group(0) @binding(1) var inputTexture: texture_2d<f32>;
 @group(0) @binding(2) var<uniform> blurParams: BlurParams;
 
-const ADAPTIVE_BLUR_TAP_RADIUS: f32 = 8.0;
-const ADAPTIVE_BLUR_CENTER_WEIGHT: f32 = 0.10315262;
-const ADAPTIVE_BLUR_PAIR_OFFSETS: array<f32, 4> = array<f32, 4>(
-  1.4765797,
-  3.4455295,
-  5.414899,
-  7.384912,
+const ADAPTIVE_BLUR_TAP_RADIUS: f32 = 6.0;
+const ADAPTIVE_BLUR_CENTER_WEIGHT: f32 = 0.13702282;
+const ADAPTIVE_BLUR_PAIR_OFFSETS: array<f32, 3> = array<f32, 3>(
+  1.4584295,
+  3.4039848,
+  5.3518057,
 );
-const ADAPTIVE_BLUR_PAIR_WEIGHTS: array<f32, 4> = array<f32, 4>(
-  0.19101082,
-  0.1404289,
-  0.08071546,
-  0.03626851,
+const ADAPTIVE_BLUR_PAIR_WEIGHTS: array<f32, 3> = array<f32, 3>(
+  0.23933733,
+  0.1394403,
+  0.052710965,
 );
 
 @fragment
@@ -125,7 +123,7 @@ fn fragmentMain(in: VertexOutput) -> @location(0) vec4f {
 
   var color = textureSampleLevel(inputTexture, blurSampler, clampedUv, 0.0) * ADAPTIVE_BLUR_CENTER_WEIGHT;
 
-  for (var i = 0u; i < 4u; i = i + 1u) {
+  for (var i = 0u; i < 3u; i = i + 1u) {
     let offset = blurStep * ADAPTIVE_BLUR_PAIR_OFFSETS[i];
     let weight = ADAPTIVE_BLUR_PAIR_WEIGHTS[i];
     color =
