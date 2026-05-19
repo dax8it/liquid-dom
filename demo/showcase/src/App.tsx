@@ -13,6 +13,7 @@ type Showcase = {
   id: string
   label: string
   Component: ComponentType
+  sourcePath: string
   frameWidth?: number | string
 }
 
@@ -21,19 +22,52 @@ type ShowcaseFrameStyle = CSSProperties & {
 }
 
 const showcases: Showcase[] = [
-  { id: 'ios-notification', label: 'Notification', Component: IosNotificationDemo },
-  { id: 'video-controls', label: 'Video Controls', Component: VideoControlsDemo },
-  { id: 'music-sidebar', label: 'Music Sidebar', Component: MusicSidebarDemo },
-  { id: 'control-center', label: 'Control Center', Component: ControlCenterDemo },
-  { id: 'menu', label: 'Menu', Component: MenuDemo },
-  { id: 'r3f-integration', label: 'R3F Integration', Component: R3FIntegrationDemo },
+  {
+    id: 'ios-notification',
+    label: 'Notification',
+    Component: IosNotificationDemo,
+    sourcePath: 'demo/showcase/src/demos/IosNotificationDemo.tsx',
+  },
+  {
+    id: 'video-controls',
+    label: 'Video Controls',
+    Component: VideoControlsDemo,
+    sourcePath: 'demo/showcase/src/demos/VideoControlsDemo.tsx',
+  },
+  {
+    id: 'music-sidebar',
+    label: 'Music Sidebar',
+    Component: MusicSidebarDemo,
+    sourcePath: 'demo/showcase/src/demos/MusicSidebarDemo.tsx',
+  },
+  {
+    id: 'control-center',
+    label: 'Control Center',
+    Component: ControlCenterDemo,
+    sourcePath: 'demo/showcase/src/demos/ControlCenterDemo.tsx',
+  },
+  {
+    id: 'menu',
+    label: 'Menu',
+    Component: MenuDemo,
+    sourcePath: 'demo/showcase/src/demos/MenuDemo.tsx',
+  },
+  {
+    id: 'r3f-integration',
+    label: 'R3F Integration',
+    Component: R3FIntegrationDemo,
+    sourcePath: 'demo/showcase/src/demos/R3FIntegrationDemo.tsx',
+  },
   {
     id: 'notification-center',
     label: 'Notification Center',
     Component: NotificationCenterDemo,
+    sourcePath: 'demo/showcase/src/demos/NotificationCenterDemo.tsx',
     frameWidth: 300,
   },
 ]
+
+const sourceBaseUrl = 'https://github.com/AndrewPrifer/liquid-dom/blob/master/'
 
 function isHtmlInCanvasEnabled() {
   if (typeof document === 'undefined') {
@@ -114,6 +148,15 @@ export default function App() {
               <section className={styles.showcaseFrame} style={showcaseFrameStyle}>
                 <SelectedShowcase key={selectedShowcase.id} />
               </section>
+              <p className={styles.sourceCaption}>
+                <a
+                  href={`${sourceBaseUrl}${selectedShowcase.sourcePath}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  View source on GitHub
+                </a>
+              </p>
             </div>
           </>
         )}

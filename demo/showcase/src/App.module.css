@@ -1,6 +1,5 @@
 .root {
   display: grid;
-  min-height: 100vh;
   grid-template-rows: auto 1fr auto;
   gap: 30px;
   padding: 50px 20px 40px;
@@ -103,6 +102,7 @@
 .stage {
   display: grid;
   min-width: 0;
+  gap: 16px;
   align-items: start;
   justify-items: center;
 }
@@ -120,6 +120,24 @@
   box-shadow: 0 22px 80px rgba(0, 0, 0, 0.07);
 }
 
+.sourceCaption {
+  margin: 0;
+  color: #737373;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.sourceCaption a {
+  color: inherit;
+  text-decoration: none;
+  text-underline-offset: 3px;
+}
+
+.sourceCaption a:hover {
+  text-decoration: underline;
+}
+
 .footer {
   display: grid;
   gap: 6px;
@@ -129,6 +147,7 @@
   font-size: 0.875rem;
   line-height: 1.45;
   text-align: center;
+  margin-top: 100px;
 }
 
 .footer p {
@@ -212,6 +231,7 @@
 
   .stage {
     width: 100%;
+    gap: 8px;
     align-items: start;
     justify-items: center;
   }
@@ -221,13 +241,13 @@
     height: 530px;
   }
 
+  .sourceCaption {
+    width: min(100% - 28px, 460px);
+  }
+
   .unsupportedNote {
     width: min(100% - 28px, 460px);
     margin-top: 46px;
     padding: 26px;
-  }
-
-  .footer {
-    width: min(100% - 28px, 460px);
   }
 }
