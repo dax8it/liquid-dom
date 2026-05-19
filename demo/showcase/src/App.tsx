@@ -35,7 +35,18 @@ const showcases: Showcase[] = [
   },
 ]
 
+function isHtmlInCanvasEnabled() {
+  if (typeof document === 'undefined') {
+    return true
+  }
+
+  const queuePrototype = (globalThis as { GPUQueue?: { prototype?: object } }).GPUQueue?.prototype
+
+  return queuePrototype !== undefined && 'copyElementImageToTexture' in queuePrototype
+}
+
 export default function App() {
+  const [htmlInCanvasEnabled] = useState(isHtmlInCanvasEnabled)
   const [selectedShowcaseId, setSelectedShowcaseId] = useState(showcases[0].id)
   const selectedShowcase =
     showcases.find((showcase) => showcase.id === selectedShowcaseId) ?? showcases[0]
@@ -52,46 +63,60 @@ export default function App() {
     <>
       <Leva hidden />
       <main className={styles.root}>
-        <nav
-          aria-label="Showcases"
-          className={styles.tabBar}
-        >
-          {showcases.map((showcase) => (
-            <button
-              key={showcase.id}
-              className={[
-                styles.tabButton,
-                showcase.id === selectedShowcase.id ? styles.tabButtonActive : '',
-              ].join(' ')}
-              type="button"
-              aria-pressed={showcase.id === selectedShowcase.id}
-              onClick={() => setSelectedShowcaseId(showcase.id)}
-            >
-              {showcase.label}
-            </button>
-          ))}
-        </nav>
-
-        <label className={styles.mobilePicker}>
-          <span className={styles.mobilePickerLabel}>Showcase</span>
-          <select
-            className={styles.mobileSelect}
-            value={selectedShowcase.id}
-            onChange={(event) => setSelectedShowcaseId(event.target.value)}
-          >
-            {showcases.map((showcase) => (
-              <option key={showcase.id} value={showcase.id}>
-                {showcase.label}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <div className={styles.stage}>
-          <section className={styles.showcaseFrame} style={showcaseFrameStyle}>
-            <SelectedShowcase key={selectedShowcase.id} />
+        {!htmlInCanvasEnabled ? (
+          <section className={styles.unsupportedNote} aria-labelledby="unsupported-title">
+            <h1 id="unsupported-title" className={styles.unsupportedTitle}>
+              HTML in Canvas is not enabled
+            </h1>
+            <p className={styles.unsupportedCopy}>
+              Enable Chrome's HTML-in-Canvas flag, then reload this page.
+            </p>
+            <code className={styles.unsupportedFlag}>chrome://flags/#canvas-draw-element</code>
           </section>
-        </div>
+        ) : (
+          <>
+            <nav
+              aria-label="Showcases"
+              className={styles.tabBar}
+            >
+              {showcases.map((showcase) => (
+                <button
+                  key={showcase.id}
+                  className={[
+                    styles.tabButton,
+                    showcase.id === selectedShowcase.id ? styles.tabButtonActive : '',
+                  ].join(' ')}
+                  type="button"
+                  aria-pressed={showcase.id === selectedShowcase.id}
+                  onClick={() => setSelectedShowcaseId(showcase.id)}
+                >
+                  {showcase.label}
+                </button>
+              ))}
+            </nav>
+
+            <label className={styles.mobilePicker}>
+              <span className={styles.mobilePickerLabel}>Showcase</span>
+              <select
+                className={styles.mobileSelect}
+                value={selectedShowcase.id}
+                onChange={(event) => setSelectedShowcaseId(event.target.value)}
+              >
+                {showcases.map((showcase) => (
+                  <option key={showcase.id} value={showcase.id}>
+                    {showcase.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className={styles.stage}>
+              <section className={styles.showcaseFrame} style={showcaseFrameStyle}>
+                <SelectedShowcase key={selectedShowcase.id} />
+              </section>
+            </div>
+          </>
+        )}
       </main>
     </>
   )

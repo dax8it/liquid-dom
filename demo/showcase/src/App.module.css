@@ -58,6 +58,48 @@
   display: none;
 }
 
+.unsupportedNote {
+  display: grid;
+  width: min(100%, 460px);
+  justify-self: center;
+  align-self: start;
+  margin-top: 80px;
+  padding: 34px;
+  border: 1px solid #e7dccd;
+  border-radius: 28px;
+  corner-shape: squircle;
+  color: #171717;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.9), rgba(255, 248, 236, 0.8)),
+    #fff3dc;
+  box-shadow: 0 22px 80px rgba(120, 72, 20, 0.11);
+}
+
+.unsupportedTitle {
+  margin: 0;
+  font-size: 1.6rem;
+  line-height: 1.1;
+  letter-spacing: 0;
+}
+
+.unsupportedCopy {
+  margin: 14px 0 18px;
+  color: #57534e;
+  line-height: 1.55;
+}
+
+.unsupportedFlag {
+  width: fit-content;
+  max-width: 100%;
+  padding: 9px 12px;
+  overflow-wrap: anywhere;
+  border-radius: 999px;
+  color: #171717;
+  background: rgba(23, 23, 23, 0.08);
+  font: inherit;
+  font-size: 0.875rem;
+}
+
 .stage {
   display: grid;
   min-width: 0;
@@ -152,5 +194,11 @@
   .showcaseFrame {
     justify-self: center;
     height: 530px;
+  }
+
+  .unsupportedNote {
+    width: min(100% - 28px, 460px);
+    margin-top: 46px;
+    padding: 26px;
   }
 }
