@@ -1,5 +1,7 @@
 # Liquid DOM
 
+<img width="1796" height="780" alt="Liquid DOM Showcase 2026-05-21T20 25 18" src="https://github.com/user-attachments/assets/c6283990-8a0e-48f6-865d-ca62f6ecbe49" />
+
 Liquid DOM is a monorepo for WebGPU liquid-glass rendering, React bindings, Three.js integration, React Three Fiber integration, and the renderer-agnostic layout engine used by the higher-level APIs.
 
 The packages are split by integration layer. Use the lowest-level package that matches the renderer you own, or the higher-level React packages when you want declarative layout.
