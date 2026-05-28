@@ -48,6 +48,8 @@ type TileView = RectMeshView & {
   hitMesh: Mesh<PlaneGeometry, MeshBasicMaterial>
   panelIndex: number
   tileIndex: number
+  currentZ: number | null
+  targetZ: number | null
 }
 
 type TitleView = AnimatedRectView & {
@@ -127,6 +129,7 @@ const TILE_PANEL_CORNER_RADIUS = 60
 const TILE_DEPTH = 30
 const TILE_BEVEL_SIZE = 6
 const TILE_BEVEL_THICKNESS = 5
+const TILE_HOVER_Z_LIFT = 0
 
 // Panel geometry
 const BACKGROUND_PADDING = 35
@@ -155,6 +158,7 @@ const CAMERA_FIT_MARGIN = 1.24
 
 // Animation
 const LAYOUT_SPRING = spring({ stiffness: 300, damping: 20 })
+const TILE_LIFT_SPRING = spring({ stiffness: 500, damping: 15 })
 
 // Environment map
 const ENVIRONMENT_MAP_URL =
@@ -164,18 +168,18 @@ const ENVIRONMENT_BACKGROUND_INTENSITY = 0.04
 const ENVIRONMENT_LIGHTING_INTENSITY = 0.72
 
 // Panel glass material
-const PANEL_GLASS_COLOR = 0xf5fff8
-const PANEL_GLASS_ATTENUATION_COLOR = 0xe5f3eb
+const PANEL_GLASS_COLOR = 0xffffff
+const PANEL_GLASS_ATTENUATION_COLOR = 0xf4fff8
 const PANEL_GLASS_ATTENUATION_DISTANCE = 180
 const PANEL_GLASS_ENV_INTENSITY = 0.85
 const PANEL_GLASS_IOR = 1.35
-const PANEL_GLASS_OPACITY = 0.3
+const PANEL_GLASS_OPACITY = 0.4
 const PANEL_GLASS_ROUGHNESS = 0.2
 const PANEL_GLASS_THICKNESS = 42
 const PANEL_GLASS_TRANSMISSION = 0.68
 
 // Tile material
-const TILE_PASTEL_MIX = 0.2
+const TILE_PASTEL_MIX = 0.12
 const TILE_COLOR_INTENSITY = 0.82
 const TILE_METALNESS = 0.08
 const TILE_ROUGHNESS = 0.38
@@ -518,6 +522,8 @@ function createPanel(panelIndex: number): PanelView {
       geometryHeight: geometrySize.height,
       currentRect: null,
       targetRect: null,
+      currentZ: null,
+      targetZ: null,
     }
   })
   const grid = createGrid(tiles)
@@ -675,6 +681,7 @@ function applyRectMesh(view: RectMeshView, rect: RenderRect, cornerRadii: Corner
 
 function applyTileRect(tile: TileView, rect: RenderRect) {
   applyRectMesh(tile, rect, tileCornerRadii(tile.tileIndex))
+  tile.mesh.position.z = tile.currentZ ?? 0
 
   const column = tile.tileIndex % GRID_COLUMNS
   const row = Math.floor(tile.tileIndex / GRID_COLUMNS)
@@ -711,6 +718,25 @@ function setRectTarget(
     applyRect(targetRect)
   } else {
     animationManager.animate(view, { currentRect: targetRect }, LAYOUT_SPRING)
+  }
+}
+
+function tileTargetZ(tile: TileView) {
+  return layoutState.hoveredTile?.panelIndex === tile.panelIndex &&
+    layoutState.hoveredTile.tileIndex === tile.tileIndex
+    ? TILE_HOVER_Z_LIFT
+    : 0
+}
+
+function setTileZTarget(tile: TileView, targetZ: number, immediate: boolean) {
+  tile.targetZ = targetZ
+
+  if (immediate || tile.currentZ === null) {
+    animationManager.stop(tile, ['currentZ'])
+    tile.currentZ = targetZ
+    tile.mesh.position.z = targetZ
+  } else {
+    animationManager.animate(tile, { currentZ: targetZ }, TILE_LIFT_SPRING)
   }
 }
 
@@ -767,6 +793,7 @@ function updateLayoutTargets(width: number, height: number, stats: LayoutDebugSt
       if (!rect) continue
 
       setRectTarget(tile, renderRectForLayoutRect(rect, width, height), immediate, (nextRect) => applyTileRect(tile, nextRect))
+      setTileZTarget(tile, tileTargetZ(tile), immediate)
     }
   }
 
@@ -808,6 +835,7 @@ function finishAnimation() {
     animationManager.stop(panel.title, ['currentRect'])
     for (const tile of panel.tiles) {
       animationManager.stop(tile, ['currentRect'])
+      animationManager.stop(tile, ['currentZ'])
     }
   }
 }
