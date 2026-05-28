@@ -3,6 +3,7 @@ import { Leva } from 'leva'
 import './App.css'
 import AnimationDemo from './demos/AnimationDemo'
 import DomMeasurementDemo from './demos/DomMeasurementDemo'
+import DraggableGlassDemo from './demos/DraggableGlassDemo'
 import HtmlLayersDemo from './demos/HtmlLayersDemo'
 import LayoutSceneDemo from './demos/LayoutSceneDemo'
 import PointerEventsDemo from './demos/PointerEventsDemo'
@@ -28,6 +29,16 @@ export default function App() {
             >
               <span>Tiny glass</span>
               <small>HTML backdrop, HTML content, width slider</small>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeDemo === 'draggable-glass'}
+              className={activeDemo === 'draggable-glass' ? 'demo-tab active' : 'demo-tab'}
+              onClick={() => setActiveDemo('draggable-glass')}
+            >
+              <span>Draggable glass</span>
+              <small>Single rounded glass rectangle, drag to reposition</small>
             </button>
             <button
               type="button"
@@ -105,6 +116,8 @@ export default function App() {
         <section className="demo-content">
           {activeDemo === 'tiny' ? (
             <TinyGlassDemo />
+          ) : activeDemo === 'draggable-glass' ? (
+            <DraggableGlassDemo />
           ) : activeDemo === 'sdf-overlap' ? (
             <SdfOverlapDemo />
           ) : activeDemo === 'layout-simple' ? (

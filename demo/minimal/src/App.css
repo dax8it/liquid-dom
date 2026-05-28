@@ -112,6 +112,38 @@
   gap: 18px;
 }
 
+.draggable-glass-demo {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 18px;
+}
+
+.draggable-glass-canvas-shell {
+  background: #ffffff;
+}
+
+.draggable-glass-word {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  color: #ffffff;
+  background: #000000;
+  font-family: Georgia, "Times New Roman", Times, serif;
+  font-size: 5rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.draggable-glass-canvas {
+  cursor: grab;
+  touch-action: none;
+}
+
+.draggable-glass-canvas:active {
+  cursor: grabbing;
+}
+
 .layout-demo {
   display: grid;
   grid-template-columns: minmax(0, 1fr);

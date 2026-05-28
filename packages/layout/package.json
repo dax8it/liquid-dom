@@ -14,6 +14,11 @@
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
     },
+    "./animation": {
+      "types": "./dist/animation.d.ts",
+      "import": "./dist/animation.js",
+      "require": "./dist/animation.cjs"
+    },
     "./dom": {
       "types": "./dist/dom.d.ts",
       "import": "./dist/dom.js",
