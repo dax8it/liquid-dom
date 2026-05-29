@@ -6,13 +6,12 @@ export const GRID_ROWS = 2
 export const PANEL_COUNT = 3
 export const HOVER_SCALE = 2
 export const NON_HOVER_SCALE = 0.85
-export const COLUMN_GAP_RATIO = 0.18
-export const ROW_GAP_RATIO = 0.21
-export const PANEL_STACK_GAP = 150
+export const COLUMN_GAP = 28
+export const ROW_GAP = 30
+export const PANEL_STACK_GAP = 120
 
 // Tile sizing and geometry
-export const TILE_MIN_SIZE = 52
-export const TILE_MAX_SIZE = 200
+export const TILE_SIZE = 140
 export const TILE_CORNER_RADIUS = 24
 export const TILE_PANEL_CORNER_RADIUS = 60
 export const TILE_DEPTH = 30
@@ -35,7 +34,7 @@ export const POINTER_ROTATION_Y = 0.12
 // Title text
 export const TITLE_Z = 10
 export const TITLE_SIZE = 42
-export const TITLE_DEPTH = 5
+export const TITLE_DEPTH = 3
 export const TITLE_PANEL_GAP = 36
 
 // Camera
@@ -43,7 +42,8 @@ export const CAMERA_FOV = 32
 export const CAMERA_DISTANCE = 1400
 export const CAMERA_NEAR = 10
 export const CAMERA_FAR = 8000
-export const CAMERA_FIT_MARGIN = 1.24
+export const CAMERA_FIT_MARGIN = 1.1
+export const CAMERA_VERTICAL_OFFSET = -90
 
 // Animation
 export const LAYOUT_SPRING = spring({ stiffness: 300, damping: 20 })
@@ -53,7 +53,7 @@ export const TILE_LIFT_SPRING = spring({ stiffness: 500, damping: 15 })
 export const ENVIRONMENT_MAP_URL =
   'https://raw.githack.com/pmndrs/drei-assets/456060a26bbeb8fdf79326f224b6d99b8bcce736/hdri/forest_slope_1k.hdr'
 export const ENVIRONMENT_BACKGROUND_BLUR = 0.2
-export const ENVIRONMENT_BACKGROUND_INTENSITY = 0.04
+export const ENVIRONMENT_BACKGROUND_INTENSITY = 0.1
 export const ENVIRONMENT_LIGHTING_INTENSITY = 0.72
 
 // Panel glass material

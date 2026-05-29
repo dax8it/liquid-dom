@@ -1,4 +1,4 @@
-import { Frame, LayoutEngine } from '@liquid-dom/layout'
+import { LayoutEngine } from '@liquid-dom/layout'
 import { AnimationManager } from '@liquid-dom/layout/animation'
 import { PlaneGeometry, Raycaster, Vector2 } from 'three'
 import type { Group, MeshBasicMaterial, PerspectiveCamera, Scene, WebGLRenderer } from 'three'
@@ -22,7 +22,6 @@ import {
   layoutState,
   sameHoverTarget,
   tileMeasureKey,
-  updateResponsiveLayoutState,
 } from '../layout/layoutState'
 import { addPanelToStage, createPanel, createRootStack, disposePanel } from '../views/panel'
 import { applyRectMesh } from '../views/rectMesh'
@@ -85,11 +84,7 @@ export class ThreeLayoutDemo {
     this.tiles = this.panels.flatMap((panel) => panel.tiles)
     this.rootStack = createRootStack(this.panels)
     this.layoutEngine = new LayoutEngine({
-      root: new Frame({
-        maxWidth: 'infinity',
-        maxHeight: 'infinity',
-        alignment: 'center',
-      }).append(this.rootStack),
+      root: this.rootStack,
     })
     this.scene = createScene(environmentMap)
     this.camera = createCamera()
@@ -138,9 +133,7 @@ export class ThreeLayoutDemo {
     this.eventCleanups.push(() => window.removeEventListener('pagehide', this.handlePageHide))
   }
 
-  private measureLayout(width: number, height: number) {
-    updateResponsiveLayoutState(width, height)
-
+  private measureLayout() {
     for (const panel of this.panels) {
       panel.grid.props = gridProps()
     }
@@ -149,17 +142,20 @@ export class ThreeLayoutDemo {
       tile.node.measureKey = tileMeasureKey(tile.panelIndex, tile.tileIndex)
     }
 
-    return this.layoutEngine.layout({ width, height })
+    return this.layoutEngine.layout({})
   }
 
   private updateLayoutTargets(width: number, height: number, stats: LayoutDebugStats, immediate: boolean) {
+    const rootRect = this.rootStack.layout?.absoluteRect
+    if (!rootRect) return
+
     for (const panel of this.panels) {
       const titleRect = panel.title.node.layout?.absoluteRect
       if (titleRect) {
         setRectTarget(
           this.animationManager,
           panel.title,
-          renderRectForLayoutRect(titleRect, width, height),
+          renderRectForLayoutRect(titleRect, rootRect),
           immediate,
           (rect) => applyTitleRect(panel.title, rect),
         )
@@ -170,7 +166,7 @@ export class ThreeLayoutDemo {
         setRectTarget(
           this.animationManager,
           panel.background,
-          renderRectForLayoutRect(panelRect, width, height),
+          renderRectForLayoutRect(panelRect, rootRect),
           immediate,
           (rect) => applyRectMesh(panel.background, rect, BACKGROUND_CORNER_RADIUS),
         )
@@ -183,7 +179,7 @@ export class ThreeLayoutDemo {
         setRectTarget(
           this.animationManager,
           tile,
-          renderRectForLayoutRect(rect, width, height),
+          renderRectForLayoutRect(rect, rootRect),
           immediate,
           (nextRect) => applyTileRect(tile, nextRect),
         )
@@ -193,7 +189,7 @@ export class ThreeLayoutDemo {
 
     this.tileSizeReadout.textContent = `${hoverTileSizeReadout()} px`
     this.nodeCountReadout.textContent = String(stats.nodes)
-    if (layoutState.hoveredTile === null) {
+    if (immediate || layoutState.hoveredTile === null) {
       this.frameCameraToRootStack(width, height)
     }
   }
@@ -227,7 +223,7 @@ export class ThreeLayoutDemo {
     frameCameraToRect(
       this.camera,
       this.stage,
-      renderRectForLayoutRect(stackRect, width, height),
+      renderRectForLayoutRect(stackRect, stackRect),
       width,
       height,
     )
@@ -269,7 +265,7 @@ export class ThreeLayoutDemo {
 
   private layoutAndRender({ immediate = false }: { immediate?: boolean } = {}) {
     const { width, height } = this.syncViewport()
-    const stats = this.measureLayout(width, height)
+    const stats = this.measureLayout()
     this.updateLayoutTargets(width, height, stats, immediate)
 
     if (immediate) {

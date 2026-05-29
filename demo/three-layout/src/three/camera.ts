@@ -1,6 +1,6 @@
 import { Vector3 } from 'three'
 import type { Group, PerspectiveCamera } from 'three'
-import { CAMERA_DISTANCE, CAMERA_FIT_MARGIN } from '../config'
+import { CAMERA_DISTANCE, CAMERA_FIT_MARGIN, CAMERA_VERTICAL_OFFSET } from '../config'
 import type { RenderRect } from '../types'
 
 const cameraLookTarget = new Vector3()
@@ -14,7 +14,7 @@ export function frameCameraToRect(
   viewportHeight: number,
 ) {
   stage.updateWorldMatrix(true, false)
-  cameraLookTarget.set(rect.x, rect.y, 0)
+  cameraLookTarget.set(rect.x, rect.y + CAMERA_VERTICAL_OFFSET, 0)
   cameraWorldTarget.copy(cameraLookTarget)
   stage.localToWorld(cameraWorldTarget)
   camera.position.set(
