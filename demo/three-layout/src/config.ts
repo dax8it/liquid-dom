@@ -79,7 +79,7 @@ export const PANEL_GLASS_THICKNESS = 42
 export const PANEL_GLASS_TRANSMISSION = 0.68
 
 // Tile material
-export const TILE_PASTEL_MIX = 0.12
+export const TILE_PASTEL_MIX = 0
 export const TILE_COLOR_INTENSITY = 0.82
 export const TILE_METALNESS = 0.08
 export const TILE_ROUGHNESS = 0.38
