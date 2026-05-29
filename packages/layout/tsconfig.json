@@ -16,7 +16,6 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
-    "erasableSyntaxOnly": true,
     "paths": {
       "@liquid-dom/layout": ["./src/index.ts"],
       "@liquid-dom/layout/dom": ["./src/dom.ts"]
