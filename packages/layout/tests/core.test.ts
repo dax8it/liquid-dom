@@ -43,6 +43,10 @@ function rect(node: LayoutNode): Rect | undefined {
   return node.layout?.rect
 }
 
+function absoluteRect(node: LayoutNode): Rect | undefined {
+  return node.layout?.absoluteRect
+}
+
 describe('built-in layouts', () => {
   it('lays out hstack children with spacing and cross-axis alignment', () => {
     const first = box({ width: 10, height: 10 })
@@ -176,7 +180,7 @@ describe('built-in layouts', () => {
     })
   })
 
-  it('stores child rects in parent-local coordinates', () => {
+  it('stores child rects in parent-local and root-local coordinates', () => {
     const leading = box({ width: 10, height: 10 })
     const nested = box({ width: 8, height: 8 })
     const padded = new Padding({ left: 4 }).append(nested)
@@ -187,6 +191,9 @@ describe('built-in layouts', () => {
     expect(rect(root)).toEqual({ x: 0, y: 0, width: 27, height: 10 })
     expect(rect(padded)).toEqual({ x: 15, y: 0, width: 12, height: 8 })
     expect(rect(nested)).toEqual({ x: 4, y: 0, width: 8, height: 8 })
+    expect(absoluteRect(root)).toEqual({ x: 0, y: 0, width: 27, height: 10 })
+    expect(absoluteRect(padded)).toEqual({ x: 15, y: 0, width: 12, height: 8 })
+    expect(absoluteRect(nested)).toEqual({ x: 19, y: 0, width: 8, height: 8 })
   })
 
   it('does not let background or overlay decorations affect measured size', () => {

@@ -16,7 +16,10 @@ export type Rect = {
 }
 
 export type NodeLayout = {
+  /** Rectangle relative to the parent layout node. */
   rect: Rect
+  /** Rectangle accumulated through layout ancestors, relative to the current layout root. */
+  absoluteRect: Rect
 }
 
 export type Axis = 'horizontal' | 'vertical'

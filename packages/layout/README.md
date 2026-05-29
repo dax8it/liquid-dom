@@ -93,7 +93,7 @@ Every node exposes:
 - `isLayoutActive()`
 - `append`, `prepend`, `insertBefore`, `replaceChildren`, `remove`, and `dispose`
 
-`layout.rect` is relative to the parent layout node. Detached nodes keep their last layout until they are laid out again.
+`layout.rect` is relative to the parent layout node. `layout.absoluteRect` is accumulated through layout ancestors and relative to the current `LayoutEngine.root`. Detached nodes keep their last layout until they are laid out again.
 
 A node is layout-active while it is reachable from at least one active `LayoutEngine.root`. `Layout` subclasses can override `onLayoutActive()` and `onLayoutInactive()` to start and stop external resources such as DOM observers. Activity hooks fire synchronously with each tree mutation. Reparenting an active subtree can therefore produce a transient inactive/active pair even when the subtree is reachable again after the move; use these hooks for resources that tolerate immediate stop/start, not as debounced final-topology notifications.
 
@@ -104,7 +104,7 @@ Core geometry and layout types:
 | `ProposedSize` | `{ width?: number; height?: number }` |
 | `Size` | `{ width: number; height: number }` |
 | `Rect` | `{ x: number; y: number; width: number; height: number }` |
-| `NodeLayout` | `{ rect: Rect }` |
+| `NodeLayout` | `{ rect: Rect; absoluteRect: Rect }` |
 | `Length` | `number \| 'infinity'` |
 | `Insets` | `{ top: number; right: number; bottom: number; left: number }` |
 | `InsetsInput` | `number`, partial edge insets, or `{ horizontal?: number; vertical?: number }` |
@@ -291,7 +291,7 @@ function applyViewLayout(view: View) {
 }
 ```
 
-If your renderer skips layout-only intermediary nodes, accumulate ancestor offsets in userland or attach render groups to the intermediary layout nodes that own those coordinate boundaries.
+If your renderer skips layout-only intermediary nodes, use `layout.absoluteRect` for root-local geometry, or attach render groups to the intermediary layout nodes that own those coordinate boundaries.
 
 ## Local Development
 

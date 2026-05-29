@@ -77,6 +77,7 @@ export class LayoutEngine {
       },
       cleanProposal,
       stats,
+      { x: 0, y: 0 },
     )
 
     this.lastStats = stats
@@ -132,14 +133,25 @@ export class LayoutEngine {
     bounds: Rect,
     proposal: ProposedSize,
     stats: LayoutDebugStats,
+    parentAbsoluteOrigin: { x: number; y: number },
   ): void {
     const rect = sanitizeRect(bounds)
+    const absoluteRect = {
+      x: parentAbsoluteOrigin.x + rect.x,
+      y: parentAbsoluteOrigin.y + rect.y,
+      width: rect.width,
+      height: rect.height,
+    }
     node.setLayout({
       rect,
+      absoluteRect,
     })
     stats.nodes += 1
 
-    const children = this.childrenFor(node, stats)
+    const children = this.childrenFor(node, stats, {
+      x: absoluteRect.x,
+      y: absoluteRect.y,
+    })
     const localBounds = {
       x: 0,
       y: 0,
@@ -154,7 +166,7 @@ export class LayoutEngine {
     })
   }
 
-  private childrenFor(node: Layout, stats: LayoutDebugStats): LayoutChild[] {
+  private childrenFor(node: Layout, stats: LayoutDebugStats, parentAbsoluteOrigin = { x: 0, y: 0 }): LayoutChild[] {
     return node.children.map((child) => {
       const childNode = asInternalNode(child)
       return {
@@ -164,7 +176,7 @@ export class LayoutEngine {
         isSpacer: childNode.isSpacer,
         measure: (proposal) => this.measureNode(childNode, sanitizeProposal(proposal), stats),
         place: (bounds, proposal) =>
-          this.placeNode(childNode, bounds, sanitizeProposal(proposal ?? bounds), stats),
+          this.placeNode(childNode, bounds, sanitizeProposal(proposal ?? bounds), stats, parentAbsoluteOrigin),
       }
     })
   }
